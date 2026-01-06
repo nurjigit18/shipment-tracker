@@ -45,6 +45,17 @@ export interface ListShipmentsParams {
   offset?: number;
 }
 
+export interface CreateShipmentRequest {
+  id: string;
+  supplier: string;
+  warehouse: string;
+  route_type: 'DIRECT' | 'VIA_FF';
+  bags: Array<{
+    bag_id: string;
+    sizes: Record<string, number>;
+  }>;
+}
+
 export const shipmentService = {
   async listShipments(params?: ListShipmentsParams): Promise<ShipmentListItem[]> {
     const queryParams = new URLSearchParams();
@@ -75,5 +86,9 @@ export const shipmentService = {
     idempotencyKey?: string
   ): Promise<any> {
     return apiClient.post(`/api/shipments/${shipmentId}/events`, status);
+  },
+
+  async createShipment(shipment: CreateShipmentRequest): Promise<Shipment> {
+    return apiClient.post<Shipment>('/api/shipments', shipment);
   }
 };

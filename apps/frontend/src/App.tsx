@@ -5,6 +5,7 @@ import { AuthScreen } from './pages/AuthScreen';
 import { Dashboard } from './pages/Dashboard';
 import { MyShipments } from './pages/MyShipments';
 import { ShipmentDetail } from './pages/ShipmentDetail';
+import { NewShipment } from './pages/NewShipment';
 
 export default function App() {
   const { isAuthenticated, loading } = useAuth();
@@ -29,26 +30,10 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/shipments" element={<MyShipments />} />
-        <Route path="/shipments/new" element={<NewShipmentPlaceholder />} />
+        <Route path="/shipments/new" element={<NewShipment />} />
         <Route path="/shipments/:id" element={<ShipmentDetail />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>
-  );
-}
-
-// Placeholder for New Shipment page (to be implemented later)
-function NewShipmentPlaceholder() {
-  return (
-    <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
-      <div className="text-center">
-        <h2 className="text-2xl font-semibold text-slate-900 mb-2">
-          Новая отправка
-        </h2>
-        <p className="text-slate-500">
-          Эта страница будет реализована позже
-        </p>
-      </div>
-    </div>
   );
 }
