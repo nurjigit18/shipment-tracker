@@ -49,6 +49,7 @@ class User(Base):
         back_populates="changed_by_user",
         cascade="all, delete-orphan",
     )
+    suppliers = relationship("UserSupplier", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<User(id={self.id}, username='{self.username}', org_id={self.organization_id})>"
