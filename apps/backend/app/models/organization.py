@@ -22,6 +22,10 @@ class Organization(Base):
     shipments = relationship("Shipment", back_populates="organization")
     user_logs = relationship("UserLog", back_populates="organization")
     status_history = relationship("ShipmentStatusHistory", back_populates="organization")
+    warehouses = relationship("Warehouse", back_populates="organization")
+    suppliers = relationship("Supplier", back_populates="organization")
+    product_models = relationship("ProductModel", back_populates="organization")
+    product_colors = relationship("ProductColor", back_populates="organization")
 
     def __repr__(self):
         return f"<Organization(id={self.id}, name='{self.name}')>"
