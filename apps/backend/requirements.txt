@@ -1,0 +1,28 @@
+# FastAPI and web server
+fastapi==0.119.1
+uvicorn[standard]==0.38.0
+python-multipart==0.0.9
+
+# Database (Async PostgreSQL)
+sqlalchemy[asyncio]==2.0.36
+psycopg[binary]>=3.2.0
+alembic==1.14.0
+
+# Authentication & Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.2.1
+
+# Configuration management
+pydantic==2.12.3
+pydantic-settings==2.7.0
+python-dotenv==1.0.1
+
+# Additional utilities
+aiofiles==24.1.0
+
+# Future integrations (optional for now, commented out)
+# google-auth==2.36.0
+# google-api-python-client==2.156.0
+# python-telegram-bot==21.11
+# sendgrid==6.11.0
