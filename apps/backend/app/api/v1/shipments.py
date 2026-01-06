@@ -5,12 +5,61 @@ import uuid
 
 from ...core.database import get_db
 from ...core.dependencies import get_current_user
-from ...schemas.shipment import StatusUpdateRequest, ShipmentListItem
+from ...schemas.shipment import StatusUpdateRequest, ShipmentListItem, ShipmentCreate, ShipmentResponse
 from ...services.shipment_service import ShipmentService
 from ...services.user_log_service import UserLogService
 from ...models.user import User
 
 router = APIRouter()
+
+
+@router.post("/", response_model=ShipmentResponse, status_code=201)
+async def create_shipment(
+    shipment: ShipmentCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Create a new shipment.
+
+    Frontend calls: POST /api/shipments
+    with body: {
+        "id": "SHIP-001",
+        "supplier": "Supplier Name",
+        "warehouse": "Казань",
+        "route_type": "VIA_FF" | "DIRECT",
+        "bags": [{"bag_id": "SHIP-001-1", "sizes": {"S": 10, "M": 20}}]
+    }
+
+    Args:
+        shipment: Shipment creation data
+        db: Database session
+        current_user: Authenticated user (contains organization_id)
+
+    Returns:
+        Created shipment data with empty events list
+
+    Raises:
+        HTTPException 400: If shipment ID already exists
+        HTTPException 401: If not authenticated
+    """
+    result = await ShipmentService.create_shipment(
+        db=db,
+        shipment_data=shipment,
+        organization_id=current_user.organization_id,
+    )
+
+    # Log the shipment creation
+    await UserLogService.log_action(
+        db,
+        user_id=current_user.id,
+        action="create_shipment",
+        shipment_id=shipment.id,
+        details={"supplier": shipment.supplier, "warehouse": shipment.warehouse},
+        organization_id=current_user.organization_id,
+    )
+
+    return result
 
 
 @router.get("/", response_model=List[ShipmentListItem])

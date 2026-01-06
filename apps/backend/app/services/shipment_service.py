@@ -2,16 +2,89 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from fastapi import HTTPException, status
-from typing import Optional
+from typing import Optional, List, Dict
 import uuid
 
 from ..models.shipment import Shipment, ShipmentStatusHistory
 from ..models.user import User
-from ..schemas.shipment import ShipmentStatus
+from ..schemas.shipment import ShipmentStatus, ShipmentCreate
 
 
 class ShipmentService:
     """Shipment business logic and data access"""
+
+    @staticmethod
+    async def create_shipment(
+        db: AsyncSession,
+        shipment_data: ShipmentCreate,
+        organization_id: int,
+    ) -> dict:
+        """
+        Create a new shipment.
+
+        Args:
+            db: Database session
+            shipment_data: Shipment creation data
+            organization_id: Organization ID for multi-tenant filtering
+
+        Returns:
+            Created shipment data
+
+        Raises:
+            HTTPException 400: If shipment ID already exists
+        """
+        # Check if shipment ID already exists in this organization
+        existing = await db.execute(
+            select(Shipment).where(
+                Shipment.id == shipment_data.id,
+                Shipment.organization_id == organization_id
+            )
+        )
+        if existing.scalar_one_or_none():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Shipment with ID '{shipment_data.id}' already exists"
+            )
+
+        # Calculate totals
+        total_bags = len(shipment_data.bags)
+        total_pieces = sum(
+            sum(bag.sizes.values()) for bag in shipment_data.bags
+        )
+
+        # Create shipment
+        shipment = Shipment(
+            id=shipment_data.id,
+            supplier=shipment_data.supplier,
+            warehouse=shipment_data.warehouse,
+            route_type=shipment_data.route_type.value,
+            bags_data=[
+                {"bag_id": bag.bag_id, "sizes": bag.sizes}
+                for bag in shipment_data.bags
+            ],
+            total_bags=total_bags,
+            total_pieces=total_pieces,
+            organization_id=organization_id,
+            current_status=None,
+        )
+
+        db.add(shipment)
+        await db.commit()
+        await db.refresh(shipment)
+
+        # Return in the same format as get_shipment
+        return {
+            "shipment": {
+                "id": shipment.id,
+                "supplier": shipment.supplier,
+                "warehouse": shipment.warehouse,
+                "route_type": shipment.route_type,
+                "current_status": shipment.current_status,
+                "bags": shipment.bags_data,
+                "totals": {"bags": shipment.total_bags, "pieces": shipment.total_pieces},
+            },
+            "events": [],
+        }
 
     @staticmethod
     async def list_shipments(
