@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 from app.core.config import settings
 from app.api.v1 import api_router
@@ -8,7 +9,18 @@ app = FastAPI(
     title="Nova Eris Shipment Tracker API",
     description="Backend API for garment shipment tracking system",
     version="1.0.0",
+    root_path="",  # Important for proxy setups
 )
+
+# Middleware to trust proxy headers (Railway/Cloudflare)
+# This ensures FastAPI generates HTTPS URLs for redirects
+@app.middleware("http")
+async def trust_proxy_headers(request, call_next):
+    # Trust X-Forwarded-Proto header from Railway/Cloudflare
+    if "x-forwarded-proto" in request.headers:
+        request.scope["scheme"] = request.headers["x-forwarded-proto"]
+    response = await call_next(request)
+    return response
 
 # CORS configuration
 app.add_middleware(
