@@ -4,8 +4,5 @@ builder = "nixpacks"
 [deploy]
 startCommand = "npm run preview"
 
-[env]
+[build.env]
 NODE_ENV = "production"
-
-[[nixpacks.phases.setup]]
-nixPkgs = ["nodejs_20"]
