@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "npm run tw:build && vite build",
-    "preview": "vite preview",
+    "preview": "vite preview --port $PORT --host",
     "tw:dev": "tailwindcss -i ./src/index.css -o ./src/tw.css --watch",
     "tw:build": "tailwindcss -i ./src/index.css -o ./src/tw.css --minify"
   },
