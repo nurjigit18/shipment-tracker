@@ -6,10 +6,15 @@ from .config import settings
 
 # Create async engine
 # Note: Use postgresql+psycopg:// for async psycopg driver
+# Railway provides postgresql:// so we need to convert it
+database_url = settings.DATABASE_URL
+if database_url.startswith("postgresql://"):
+    database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+elif database_url.startswith("postgresql+asyncpg://"):
+    database_url = database_url.replace("postgresql+asyncpg://", "postgresql+psycopg://", 1)
+
 engine = create_async_engine(
-    settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql+psycopg://")
-    if "postgresql+asyncpg://" in settings.DATABASE_URL
-    else settings.DATABASE_URL,
+    database_url,
     echo=settings.ENVIRONMENT == "development",  # SQL logging in dev
     pool_pre_ping=True,  # Verify connections before using
     pool_size=5,
