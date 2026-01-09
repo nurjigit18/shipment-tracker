@@ -1,13 +1,16 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
 import uuid
+import os
 
 from ...core.database import get_db
 from ...core.dependencies import get_current_user
-from ...schemas.shipment import StatusUpdateRequest, ShipmentListItem, ShipmentCreate, ShipmentResponse
+from ...schemas.shipment import StatusUpdateRequest, ShipmentListItem, ShipmentCreate, ShipmentResponse, ShipmentUpdate
 from ...services.shipment_service import ShipmentService
 from ...services.user_log_service import UserLogService
+from ...services.pdf_service import PDFService
 from ...models.user import User
 
 router = APIRouter()
@@ -20,16 +23,22 @@ async def create_shipment(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Create a new shipment.
+    Create a new shipment with auto-generated ID.
 
     Frontend calls: POST /api/shipments
     with body: {
-        "id": "SHIP-001",
         "supplier": "Supplier Name",
         "warehouse": "Казань",
         "route_type": "VIA_FF" | "DIRECT",
-        "bags": [{"bag_id": "SHIP-001-1", "sizes": {"S": 10, "M": 20}}]
+        "bags_data": [{
+            "bag_id": "BAG-1",
+            "items": [
+                {"model": "shirt", "color": "red", "sizes": {"S": 10, "M": 20}}
+            ]
+        }]
     }
+
+    Shipment ID is auto-generated in format: SHIP-YYYYMMDD-XXX
 
     Args:
         shipment: Shipment creation data
@@ -40,7 +49,6 @@ async def create_shipment(
         Created shipment data with empty events list
 
     Raises:
-        HTTPException 400: If shipment ID already exists
         HTTPException 401: If not authenticated
     """
     result = await ShipmentService.create_shipment(
@@ -54,7 +62,7 @@ async def create_shipment(
         db,
         user_id=current_user.id,
         action="create_shipment",
-        shipment_id=shipment.id,
+        shipment_id=result["shipment"]["id"],
         details={"supplier": shipment.supplier, "warehouse": shipment.warehouse},
         organization_id=current_user.organization_id,
     )
@@ -65,6 +73,7 @@ async def create_shipment(
 @router.get("/", response_model=List[ShipmentListItem])
 async def list_shipments(
     status: Optional[str] = Query(None, description="Filter by status"),
+    supplier: Optional[str] = Query(None, description="Filter by supplier"),
     limit: int = Query(default=20, le=100, description="Maximum results"),
     offset: int = Query(default=0, ge=0, description="Skip results"),
     db: AsyncSession = Depends(get_db),
@@ -73,10 +82,11 @@ async def list_shipments(
     """
     List shipments for current user's organization.
 
-    Frontend calls: GET /api/shipments?status=...&limit=20&offset=0
+    Frontend calls: GET /api/shipments?status=...&supplier=...&limit=20&offset=0
 
     Args:
         status: Optional status filter (SENT_FROM_FACTORY, SHIPPED_FROM_FF, DELIVERED)
+        supplier: Optional supplier name filter
         limit: Maximum number of results (default 20, max 100)
         offset: Number of results to skip for pagination (default 0)
         db: Database session
@@ -93,6 +103,7 @@ async def list_shipments(
         db=db,
         organization_id=current_user.organization_id,
         status=status,
+        supplier=supplier,
         limit=limit,
         offset=offset,
     )
@@ -192,3 +203,144 @@ async def create_shipment_event(
     )
 
     return result
+
+
+@router.put("/{shipment_id}", response_model=ShipmentResponse)
+async def update_shipment(
+    shipment_id: str,
+    update_data: ShipmentUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Update shipment data (supplier-only).
+
+    Frontend calls: PUT /api/shipments/{shipment_id}
+    with body: {
+        "supplier": "New Supplier",
+        "warehouse": "New Warehouse",
+        "route_type": "VIA_FF",
+        "shipment_date": "2026-01-15",
+        "bags_data": [...]
+    }
+
+    All changes are logged in shipment_change_log table.
+
+    Args:
+        shipment_id: Shipment ID
+        update_data: Fields to update (all optional)
+        db: Database session
+        current_user: Authenticated user
+
+    Returns:
+        Updated shipment data with events
+
+    Raises:
+        HTTPException 403: If user is not a supplier
+        HTTPException 404: If shipment not found
+    """
+    # Only suppliers can edit shipments
+    if current_user.role.name not in ["supplier", "admin"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Only suppliers can edit shipments"
+        )
+
+    # Convert Pydantic model to dict, excluding None values
+    update_dict = update_data.model_dump(exclude_none=True)
+
+    # Convert route_type enum to string value if present
+    if "route_type" in update_dict:
+        update_dict["route_type"] = update_dict["route_type"].value
+
+    # Convert bags_data from Pydantic models to dicts if present
+    if "bags_data" in update_dict:
+        update_dict["bags_data"] = [
+            {
+                "bag_id": bag.bag_id,
+                "items": [
+                    {
+                        "model": item.model,
+                        "color": item.color,
+                        "sizes": item.sizes
+                    }
+                    for item in bag.items
+                ]
+            }
+            for bag in update_data.bags_data
+        ]
+
+    result = await ShipmentService.update_shipment(
+        db=db,
+        shipment_id=shipment_id,
+        update_data=update_dict,
+        user=current_user,
+    )
+
+    # Log the update action
+    await UserLogService.log_action(
+        db,
+        user_id=current_user.id,
+        action="update_shipment",
+        shipment_id=shipment_id,
+        details={"updated_fields": list(update_dict.keys())},
+        organization_id=current_user.organization_id,
+    )
+
+    return result
+
+
+@router.get("/{shipment_id}/pdf")
+async def download_shipment_pdf(
+    shipment_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Download PDF report for a shipment with embedded QR code.
+
+    Args:
+        shipment_id: ID of the shipment
+        db: Database session
+        current_user: Authenticated user
+
+    Returns:
+        PDF file as bytes
+
+    Raises:
+        HTTPException 404: If shipment not found or access denied
+    """
+    # Get shipment data
+    shipment_data = await ShipmentService.get_shipment(
+        db=db,
+        shipment_id=shipment_id,
+        organization_id=current_user.organization_id
+    )
+
+    # Get base URL from environment or use default
+    base_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
+
+    # Generate PDF
+    pdf_bytes = PDFService.generate_shipment_pdf(
+        shipment_data=shipment_data['shipment'],
+        base_url=base_url
+    )
+
+    # Log the download action
+    await UserLogService.log_action(
+        db,
+        user_id=current_user.id,
+        action="download_pdf",
+        shipment_id=shipment_id,
+        details={"format": "pdf"},
+        organization_id=current_user.organization_id,
+    )
+
+    # Return PDF with proper headers
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename=shipment_{shipment_id}.pdf"
+        }
+    )

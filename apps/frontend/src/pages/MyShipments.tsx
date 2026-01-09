@@ -2,18 +2,39 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { shipmentService } from '../services/shipments';
 import type { ShipmentListItem } from '../services/shipments';
-import { Package, Loader2, AlertCircle, Filter, Search } from 'lucide-react';
+import { apiClient } from '../services/api';
+import { Package, Loader2, AlertCircle, Filter, Search, Users, Download } from 'lucide-react';
+
+interface Supplier {
+  id: number;
+  name: string;
+}
 
 export function MyShipments() {
   const [shipments, setShipments] = useState<ShipmentListItem[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [supplierFilter, setSupplierFilter] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
+    loadSuppliers();
+  }, []);
+
+  useEffect(() => {
     loadShipments();
-  }, [statusFilter]);
+  }, [statusFilter, supplierFilter]);
+
+  const loadSuppliers = async () => {
+    try {
+      const data = await apiClient.get<Supplier[]>('/api/suppliers/my-suppliers');
+      setSuppliers(data);
+    } catch (e: any) {
+      console.error('Error loading suppliers:', e);
+    }
+  };
 
   const loadShipments = async () => {
     setLoading(true);
@@ -22,6 +43,9 @@ export function MyShipments() {
       const params: any = { limit: 100 };
       if (statusFilter) {
         params.status = statusFilter;
+      }
+      if (supplierFilter) {
+        params.supplier = supplierFilter;
       }
       const data = await shipmentService.listShipments(params);
       setShipments(data);
@@ -41,6 +65,38 @@ export function MyShipments() {
       shipment.warehouse.toLowerCase().includes(query)
     );
   });
+
+  const handleDownloadPDF = async (shipmentId: string, event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+      const response = await fetch(`${API_BASE_URL}/api/shipments/${shipmentId}/pdf`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to download PDF');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `shipment_${shipmentId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (e: any) {
+      console.error('Error downloading PDF:', e);
+      alert('Ошибка загрузки PDF. Попробуйте еще раз.');
+    }
+  };
 
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto">
@@ -65,8 +121,30 @@ export function MyShipments() {
                 placeholder="ID, поставщик, склад..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
+            </div>
+          </div>
+
+          {/* Supplier filter */}
+          <div className="md:w-64">
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              Поставщик
+            </label>
+            <div className="relative">
+              <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+              <select
+                value={supplierFilter}
+                onChange={(e) => setSupplierFilter(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent appearance-none bg-white"
+              >
+                <option value="">Все</option>
+                {suppliers.map((supplier) => (
+                  <option key={supplier.id} value={supplier.name}>
+                    {supplier.name}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -80,7 +158,7 @@ export function MyShipments() {
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent appearance-none bg-white"
+                className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent appearance-none bg-white"
               >
                 <option value="">Все</option>
                 <option value="SENT_FROM_FACTORY">У поставщика</option>
@@ -103,7 +181,7 @@ export function MyShipments() {
       {loading && (
         <div className="flex items-center justify-center py-12">
           <div className="text-center">
-            <Loader2 className="w-8 h-8 text-emerald-500 animate-spin mx-auto mb-4" />
+            <Loader2 className="w-8 h-8 text-primary-500 animate-spin mx-auto mb-4" />
             <p className="text-slate-600">Загрузка отправок...</p>
           </div>
         </div>
@@ -118,7 +196,7 @@ export function MyShipments() {
             <p className="text-slate-600 mb-4">{error}</p>
             <button
               onClick={loadShipments}
-              className="px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600"
+              className="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600"
             >
               Попробовать снова
             </button>
@@ -166,6 +244,9 @@ export function MyShipments() {
                       <th className="px-6 py-4 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
                         Дата
                       </th>
+                      <th className="px-6 py-4 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                        Действия
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -177,7 +258,7 @@ export function MyShipments() {
                         <td className="px-6 py-4 whitespace-nowrap">
                           <Link
                             to={`/shipments/${shipment.id}`}
-                            className="font-mono text-sm text-emerald-600 hover:text-emerald-700 font-medium"
+                            className="font-mono text-sm text-primary-600 hover:text-cyan-700 font-medium"
                           >
                             {shipment.id}
                           </Link>
@@ -201,6 +282,16 @@ export function MyShipments() {
                             year: 'numeric',
                           })}
                         </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <button
+                            onClick={(e) => handleDownloadPDF(shipment.id, e)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-primary-600 hover:text-primary-700 hover:bg-primary-50 rounded-lg transition-colors"
+                            title="Скачать PDF с QR-кодом"
+                          >
+                            <Download className="w-4 h-4" />
+                            PDF
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -217,7 +308,7 @@ export function MyShipments() {
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex-1">
-                        <p className="font-mono text-sm font-medium text-emerald-600 mb-1">
+                        <p className="font-mono text-sm font-medium text-primary-600 mb-1">
                           {shipment.id}
                         </p>
                         <p className="text-sm text-slate-500">
@@ -269,7 +360,7 @@ function StatusBadge({ status }: { status: string | null }) {
   const colorClasses = {
     amber: 'bg-amber-100 text-amber-700',
     blue: 'bg-blue-100 text-blue-700',
-    emerald: 'bg-emerald-100 text-emerald-700',
+    emerald: 'bg-cyan-100 text-cyan-700',
   };
 
   return (

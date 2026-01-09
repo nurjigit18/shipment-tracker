@@ -1,1 +1,90 @@
 @import "tailwindcss";
+
+@theme {
+  /* Custom neon blue colors for brand identity */
+  --color-primary-50: #e0f7ff;
+  --color-primary-100: #b3ecff;
+  --color-primary-200: #80e0ff;
+  --color-primary-300: #4dd4ff;
+  --color-primary-400: #26c9ff;
+  --color-primary-500: #00bfff; /* Main neon blue */
+  --color-primary-600: #00a8e6;
+  --color-primary-700: #0091cc;
+  --color-primary-800: #007ab3;
+  --color-primary-900: #005580;
+  --color-primary-950: #003d5c;
+}
+
+/* Enhanced neon glow effects for primary buttons and elements */
+.bg-primary-500 {
+  background-color: var(--color-primary-500);
+  box-shadow: 0 0 20px rgba(0, 191, 255, 0.4), 0 0 40px rgba(0, 191, 255, 0.2);
+}
+
+.bg-primary-600 {
+  background-color: var(--color-primary-600);
+  box-shadow: 0 0 25px rgba(0, 168, 230, 0.5), 0 0 50px rgba(0, 168, 230, 0.25);
+}
+
+.text-primary-500 {
+  color: var(--color-primary-500);
+}
+
+.text-primary-600 {
+  color: var(--color-primary-600);
+}
+
+.text-primary-700 {
+  color: var(--color-primary-700);
+}
+
+.border-primary-300 {
+  border-color: var(--color-primary-300);
+}
+
+.border-primary-500 {
+  border-color: var(--color-primary-500);
+}
+
+.ring-primary-500 {
+  --tw-ring-color: var(--color-primary-500);
+}
+
+/* Neon glow on hover */
+.hover\:bg-primary-600:hover {
+  background-color: var(--color-primary-600);
+  box-shadow: 0 0 30px rgba(0, 168, 230, 0.6), 0 0 60px rgba(0, 168, 230, 0.3);
+}
+
+/* Enhanced focus states with neon glow */
+.focus\:ring-primary-500:focus {
+  --tw-ring-color: var(--color-primary-500);
+  box-shadow: 0 0 0 3px rgba(0, 191, 255, 0.3), 0 0 20px rgba(0, 191, 255, 0.4);
+}
+
+.focus\:border-primary-500:focus {
+  border-color: var(--color-primary-500);
+}
+
+/* Animated neon pulse for loading spinners */
+@keyframes neon-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 5px rgba(0, 191, 255, 0.8)) drop-shadow(0 0 10px rgba(0, 191, 255, 0.5));
+  }
+  50% {
+    filter: drop-shadow(0 0 10px rgba(0, 191, 255, 1)) drop-shadow(0 0 20px rgba(0, 191, 255, 0.7));
+  }
+}
+
+.border-primary-500 {
+  animation: neon-pulse 2s ease-in-out infinite;
+}
+
+/* Enhanced shadow effects for cards and important elements */
+.shadow-primary {
+  box-shadow: 0 4px 14px rgba(0, 191, 255, 0.15), 0 2px 8px rgba(0, 191, 255, 0.1);
+}
+
+.shadow-primary-lg {
+  box-shadow: 0 10px 40px rgba(0, 191, 255, 0.2), 0 5px 20px rgba(0, 191, 255, 0.15);
+}

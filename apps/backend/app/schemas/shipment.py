@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict
-from datetime import datetime
+from datetime import datetime, date
 from enum import Enum
 
 
@@ -19,11 +19,19 @@ class ShipmentStatus(str, Enum):
     DELIVERED = "DELIVERED"
 
 
+class BagItemInfo(BaseModel):
+    """Individual item within a bag"""
+
+    model: str
+    color: str
+    sizes: Dict[str, int]  # {"S": 10, "M": 20, "L": 15}
+
+
 class BagInfo(BaseModel):
     """Individual bag information"""
 
     bag_id: str
-    sizes: Dict[str, int]  # {"S": 10, "M": 20, "L": 15}
+    items: List['BagItemInfo']  # List of items in the bag
 
 
 class ShipmentTotals(BaseModel):
@@ -36,11 +44,11 @@ class ShipmentTotals(BaseModel):
 class ShipmentCreate(BaseModel):
     """Create shipment request"""
 
-    id: str
     supplier: str
     warehouse: str
     route_type: RouteType
-    bags: List[BagInfo]
+    shipment_date: Optional[date] = None
+    bags_data: List[BagInfo]
 
 
 class ShipmentDetail(BaseModel):
@@ -50,6 +58,7 @@ class ShipmentDetail(BaseModel):
     supplier: str
     warehouse: str
     route_type: str
+    shipment_date: Optional[str] = None  # ISO format date string
     current_status: Optional[str] = None
     bags: List[Dict]  # List of bag objects
     totals: Dict[str, int]  # {"bags": 3, "pieces": 81}
@@ -96,6 +105,7 @@ class ShipmentListItem(BaseModel):
     id: str
     supplier: str
     warehouse: str
+    shipment_date: Optional[date] = None
     current_status: Optional[str] = None
     total_bags: int
     total_pieces: int
@@ -103,3 +113,13 @@ class ShipmentListItem(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ShipmentUpdate(BaseModel):
+    """Update shipment request (all fields optional)"""
+
+    supplier: Optional[str] = None
+    warehouse: Optional[str] = None
+    route_type: Optional[RouteType] = None
+    shipment_date: Optional[date] = None
+    bags_data: Optional[List[BagInfo]] = None

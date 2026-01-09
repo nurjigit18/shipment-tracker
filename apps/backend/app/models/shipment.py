@@ -24,16 +24,15 @@ class Shipment(Base):
 
     __tablename__ = "shipments"
 
-    id = Column(String(50), primary_key=True)  # Auto-generated: SHIP-{year}-{seq}
-    supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=False)
-    warehouse_id = Column(Integer, ForeignKey("warehouses.id"), nullable=False)
+    id = Column(String(50), primary_key=True)
+    supplier = Column(String(200), nullable=False)  # Text field for now
+    warehouse = Column(String(200), nullable=False)  # Text field for now
     route_type = Column(String(20), nullable=False)  # DIRECT or VIA_FF
+    shipment_date = Column(Date, nullable=True)  # Date when shipment is scheduled/made
     current_status = Column(String(50))  # NULL, SENT_FROM_FACTORY, SHIPPED_FROM_FF, DELIVERED
-    bags_data = Column(JSONB, nullable=False)  # Structured bag data with items
+    bags_data = Column(JSONB, nullable=False)  # Structured bag data
     total_bags = Column(Integer, nullable=False)
     total_pieces = Column(Integer, nullable=False)
-    ship_date = Column(Date, nullable=False)  # дата отправки
-    actual_arrival_date = Column(Date)  # факт. дата прибытия
     organization_id = Column(
         Integer, ForeignKey("organizations.id"), nullable=False, index=True
     )
@@ -43,8 +42,6 @@ class Shipment(Base):
 
     # Relationships
     organization = relationship("Organization", back_populates="shipments")
-    supplier = relationship("Supplier")
-    warehouse = relationship("Warehouse")
     status_history = relationship(
         "ShipmentStatusHistory", back_populates="shipment", cascade="all, delete-orphan"
     )
@@ -90,4 +87,38 @@ class ShipmentStatusHistory(Base):
         Index("idx_shipment_history_shipment_id", "shipment_id"),
         Index("idx_shipment_history_changed_at", "changed_at"),
         Index("idx_shipment_history_organization_id", "organization_id"),
+    )
+
+
+class ShipmentChangeLog(Base):
+    """
+    Track all changes to shipment data (not just status changes).
+    Logs changes to bag contents, shipment date, supplier, warehouse, etc.
+    Provides complete audit trail for shipment modifications.
+    """
+
+    __tablename__ = "shipment_change_log"
+
+    id = Column(Integer, primary_key=True, index=True)
+    shipment_id = Column(String(50), ForeignKey("shipments.id", ondelete="CASCADE"), nullable=False)
+    changed_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    changed_at = Column(DateTime(timezone=True), server_default=func.now())
+    change_type = Column(String(50), nullable=False)  # bag_contents, shipment_date, supplier, warehouse, route_type
+    old_value = Column(JSONB)  # Previous value (can be any type)
+    new_value = Column(JSONB)  # New value (can be any type)
+    notes = Column(Text)  # Optional notes about the change
+    organization_id = Column(
+        Integer, ForeignKey("organizations.id", ondelete="SET NULL"), index=True
+    )
+
+    # Relationships
+    shipment = relationship("Shipment")
+    changed_by_user = relationship("User")
+    organization = relationship("Organization")
+
+    # Indexes for performance
+    __table_args__ = (
+        Index("idx_change_log_shipment_id", "shipment_id"),
+        Index("idx_change_log_changed_at", "changed_at"),
+        Index("idx_change_log_organization_id", "organization_id"),
     )

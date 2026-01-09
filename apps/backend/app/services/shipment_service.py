@@ -4,6 +4,7 @@ from sqlalchemy.orm import selectinload
 from fastapi import HTTPException, status
 from typing import Optional, List, Dict
 import uuid
+from datetime import datetime
 
 from ..models.shipment import Shipment, ShipmentStatusHistory
 from ..models.user import User
@@ -20,7 +21,7 @@ class ShipmentService:
         organization_id: int,
     ) -> dict:
         """
-        Create a new shipment.
+        Create a new shipment with auto-generated ID.
 
         Args:
             db: Database session
@@ -29,39 +30,65 @@ class ShipmentService:
 
         Returns:
             Created shipment data
-
-        Raises:
-            HTTPException 400: If shipment ID already exists
         """
-        # Check if shipment ID already exists in this organization
-        existing = await db.execute(
-            select(Shipment).where(
-                Shipment.id == shipment_data.id,
-                Shipment.organization_id == organization_id
-            )
-        )
-        if existing.scalar_one_or_none():
-            raise HTTPException(
-                status_code=400,
-                detail=f"Shipment with ID '{shipment_data.id}' already exists"
-            )
+        # Auto-generate shipment ID with format: SHIP-YYYYMMDD-XXX
+        date_str = datetime.now().strftime("%Y%m%d")
 
-        # Calculate totals
-        total_bags = len(shipment_data.bags)
-        total_pieces = sum(
-            sum(bag.sizes.values()) for bag in shipment_data.bags
+        # Find the last shipment created today
+        result = await db.execute(
+            select(Shipment)
+            .where(
+                Shipment.organization_id == organization_id,
+                Shipment.id.like(f"SHIP-{date_str}-%")
+            )
+            .order_by(Shipment.id.desc())
+            .limit(1)
         )
+        last_shipment = result.scalars().first()
+
+        # Generate next sequence number
+        if last_shipment:
+            # Extract sequence number from last ID (e.g., SHIP-20260106-003 -> 003)
+            last_seq = int(last_shipment.id.split('-')[-1])
+            next_seq = last_seq + 1
+        else:
+            next_seq = 1
+
+        shipment_id = f"SHIP-{date_str}-{next_seq:03d}"
+
+        # Calculate totals from bags_data with items
+        total_bags = len(shipment_data.bags_data)
+        total_pieces = sum(
+            sum(item_sizes.values())
+            for bag in shipment_data.bags_data
+            for item in bag.items
+            for item_sizes in [item.sizes]
+        )
+
+        # Transform bags_data to include items with model/color
+        bags_data_dict = [
+            {
+                "bag_id": bag.bag_id,
+                "items": [
+                    {
+                        "model": item.model,
+                        "color": item.color,
+                        "sizes": item.sizes
+                    }
+                    for item in bag.items
+                ]
+            }
+            for bag in shipment_data.bags_data
+        ]
 
         # Create shipment
         shipment = Shipment(
-            id=shipment_data.id,
+            id=shipment_id,
             supplier=shipment_data.supplier,
             warehouse=shipment_data.warehouse,
             route_type=shipment_data.route_type.value,
-            bags_data=[
-                {"bag_id": bag.bag_id, "sizes": bag.sizes}
-                for bag in shipment_data.bags
-            ],
+            shipment_date=shipment_data.shipment_date,
+            bags_data=bags_data_dict,
             total_bags=total_bags,
             total_pieces=total_pieces,
             organization_id=organization_id,
@@ -79,6 +106,7 @@ class ShipmentService:
                 "supplier": shipment.supplier,
                 "warehouse": shipment.warehouse,
                 "route_type": shipment.route_type,
+                "shipment_date": shipment.shipment_date.isoformat() if shipment.shipment_date else None,
                 "current_status": shipment.current_status,
                 "bags": shipment.bags_data,
                 "totals": {"bags": shipment.total_bags, "pieces": shipment.total_pieces},
@@ -91,6 +119,7 @@ class ShipmentService:
         db: AsyncSession,
         organization_id: int,
         status: Optional[str] = None,
+        supplier: Optional[str] = None,
         limit: int = 20,
         offset: int = 0,
     ) -> list[dict]:
@@ -101,6 +130,7 @@ class ShipmentService:
             db: Database session
             organization_id: Organization ID for multi-tenant filtering
             status: Optional status filter
+            supplier: Optional supplier name filter
             limit: Maximum number of results
             offset: Number of results to skip
 
@@ -116,6 +146,10 @@ class ShipmentService:
         # Apply status filter if provided
         if status:
             query = query.where(Shipment.current_status == status)
+
+        # Apply supplier filter if provided
+        if supplier:
+            query = query.where(Shipment.supplier == supplier)
 
         # Order by most recent first
         query = query.order_by(Shipment.created_at.desc())
@@ -190,6 +224,7 @@ class ShipmentService:
                 "supplier": shipment.supplier,
                 "warehouse": shipment.warehouse,
                 "route_type": shipment.route_type,
+                "shipment_date": shipment.shipment_date.isoformat() if shipment.shipment_date else None,
                 "current_status": shipment.current_status,
                 "bags": shipment.bags_data,
                 "totals": {"bags": shipment.total_bags, "pieces": shipment.total_pieces},
@@ -312,3 +347,112 @@ class ShipmentService:
                 status_code=400,
                 detail=f"Invalid status transition from {current} to {new}",
             )
+
+    @staticmethod
+    async def update_shipment(
+        db: AsyncSession,
+        shipment_id: str,
+        update_data: dict,
+        user: User,
+    ) -> dict:
+        """
+        Update shipment data and log all changes.
+
+        Args:
+            db: Database session
+            shipment_id: Shipment ID
+            update_data: Dictionary of fields to update
+            user: User making the change (contains organization_id)
+
+        Returns:
+            Updated shipment data
+
+        Raises:
+            HTTPException 404: If shipment not found or access denied
+            HTTPException 403: If organization mismatch
+        """
+        from .shipment_change_log_service import ShipmentChangeLogService
+
+        # CRITICAL: Get shipment filtered by user's organization
+        result = await db.execute(
+            select(Shipment).where(
+                Shipment.id == shipment_id,
+                Shipment.organization_id == user.organization_id,
+            )
+        )
+        shipment = result.scalar_one_or_none()
+
+        if not shipment:
+            raise HTTPException(
+                status_code=404, detail="Shipment not found or access denied"
+            )
+
+        # Double-check organization match (defense in depth)
+        if shipment.organization_id != user.organization_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Cannot update shipment from different organization",
+            )
+
+        # Track changes and update fields
+        changes_made = False
+
+        if "supplier" in update_data and update_data["supplier"] != shipment.supplier:
+            old_value = shipment.supplier
+            shipment.supplier = update_data["supplier"]
+            await ShipmentChangeLogService.log_change(
+                db, shipment_id, user.id, "supplier", old_value, update_data["supplier"], user.organization_id
+            )
+            changes_made = True
+
+        if "warehouse" in update_data and update_data["warehouse"] != shipment.warehouse:
+            old_value = shipment.warehouse
+            shipment.warehouse = update_data["warehouse"]
+            await ShipmentChangeLogService.log_change(
+                db, shipment_id, user.id, "warehouse", old_value, update_data["warehouse"], user.organization_id
+            )
+            changes_made = True
+
+        if "route_type" in update_data and update_data["route_type"] != shipment.route_type:
+            old_value = shipment.route_type
+            shipment.route_type = update_data["route_type"]
+            await ShipmentChangeLogService.log_change(
+                db, shipment_id, user.id, "route_type", old_value, update_data["route_type"], user.organization_id
+            )
+            changes_made = True
+
+        if "shipment_date" in update_data and update_data["shipment_date"] != shipment.shipment_date:
+            old_value = shipment.shipment_date.isoformat() if shipment.shipment_date else None
+            shipment.shipment_date = update_data["shipment_date"]
+            new_value = update_data["shipment_date"].isoformat() if update_data["shipment_date"] else None
+            await ShipmentChangeLogService.log_change(
+                db, shipment_id, user.id, "shipment_date", old_value, new_value, user.organization_id
+            )
+            changes_made = True
+
+        if "bags_data" in update_data and update_data["bags_data"] != shipment.bags_data:
+            old_value = shipment.bags_data
+            new_bags_data = update_data["bags_data"]
+
+            # Recalculate totals
+            total_bags = len(new_bags_data)
+            total_pieces = sum(
+                sum(item["sizes"].values())
+                for bag in new_bags_data
+                for item in bag.get("items", [])
+            )
+
+            shipment.bags_data = new_bags_data
+            shipment.total_bags = total_bags
+            shipment.total_pieces = total_pieces
+
+            await ShipmentChangeLogService.log_change(
+                db, shipment_id, user.id, "bag_contents", old_value, new_bags_data, user.organization_id
+            )
+            changes_made = True
+
+        if changes_made:
+            await db.commit()
+            await db.refresh(shipment)
+
+        return await ShipmentService.get_shipment(db, shipment_id, user.organization_id)

@@ -6,6 +6,7 @@ export interface Shipment {
     supplier: string;
     warehouse: string;
     route_type: string;
+    shipment_date?: string | null;
     current_status: string | null;
     bags: Array<{
       bag_id: string;
@@ -41,18 +42,38 @@ export interface ShipmentListItem {
 
 export interface ListShipmentsParams {
   status?: string;
+  supplier?: string;
   limit?: number;
   offset?: number;
 }
 
 export interface CreateShipmentRequest {
-  id: string;
   supplier: string;
   warehouse: string;
   route_type: 'DIRECT' | 'VIA_FF';
-  bags: Array<{
+  shipment_date?: string | null;
+  bags_data: Array<{
     bag_id: string;
-    sizes: Record<string, number>;
+    items: Array<{
+      model: string;
+      color: string;
+      sizes: Record<string, number>;
+    }>;
+  }>;
+}
+
+export interface UpdateShipmentRequest {
+  supplier?: string;
+  warehouse?: string;
+  route_type?: 'DIRECT' | 'VIA_FF';
+  shipment_date?: string | null;
+  bags_data?: Array<{
+    bag_id: string;
+    items: Array<{
+      model: string;
+      color: string;
+      sizes: Record<string, number>;
+    }>;
   }>;
 }
 
@@ -62,6 +83,9 @@ export const shipmentService = {
 
     if (params?.status) {
       queryParams.append('status', params.status);
+    }
+    if (params?.supplier) {
+      queryParams.append('supplier', params.supplier);
     }
     if (params?.limit !== undefined) {
       queryParams.append('limit', params.limit.toString());
@@ -90,5 +114,9 @@ export const shipmentService = {
 
   async createShipment(shipment: CreateShipmentRequest): Promise<Shipment> {
     return apiClient.post<Shipment>('/api/shipments', shipment);
+  },
+
+  async updateShipment(shipmentId: string, updates: UpdateShipmentRequest): Promise<Shipment> {
+    return apiClient.put<Shipment>(`/api/shipments/${shipmentId}`, updates);
   }
 };

@@ -4,6 +4,9 @@ from fastapi import APIRouter
 from .auth import router as auth_router
 from .shipments import router as shipments_router
 from .organizations import router as organizations_router
+from .warehouses import router as warehouses_router
+from .suppliers import router as suppliers_router
+from .products import router as products_router
 
 api_router = APIRouter()
 
@@ -11,3 +14,6 @@ api_router = APIRouter()
 api_router.include_router(auth_router, prefix="/auth", tags=["authentication"])
 api_router.include_router(shipments_router, prefix="/shipments", tags=["shipments"])
 api_router.include_router(organizations_router, tags=["organizations"])
+api_router.include_router(warehouses_router, prefix="/warehouses", tags=["warehouses"])
+api_router.include_router(suppliers_router, prefix="/suppliers", tags=["suppliers"])
+api_router.include_router(products_router, prefix="/products", tags=["products"])

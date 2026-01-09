@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Home, Package, Plus, LogOut, Menu, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Home, Package, Plus, LogOut, Menu, X, ChevronLeft, ChevronRight, Users } from 'lucide-react';
 import { useState } from 'react';
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -13,11 +13,19 @@ export function Layout({ children }: { children: React.ReactNode }) {
     { path: '/', icon: Home, label: 'Главная' },
     { path: '/shipments', icon: Package, label: 'Мои отправки' },
     { path: '/shipments/new', icon: Plus, label: 'Новая отправка' },
+    { path: '/suppliers', icon: Users, label: 'Мои поставщики' },
   ];
 
   const isActive = (path: string) => {
     if (path === '/') {
       return location.pathname === '/';
+    }
+    // Exact match for specific paths to avoid matching parent routes
+    if (path === '/shipments/new') {
+      return location.pathname === '/shipments/new';
+    }
+    if (path === '/shipments') {
+      return location.pathname === '/shipments' || (location.pathname.startsWith('/shipments/') && !location.pathname.startsWith('/shipments/new'));
     }
     return location.pathname.startsWith(path);
   };
@@ -66,7 +74,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     to={item.path}
                     className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3'} px-4 py-3 rounded-xl transition-all duration-200 ${
                       active
-                        ? 'bg-emerald-600 text-white font-medium shadow-lg shadow-emerald-600/30'
+                        ? 'bg-primary-600 text-white font-medium shadow-lg shadow-cyan-600/30'
                         : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                     }`}
                     title={sidebarCollapsed ? item.label : undefined}
@@ -84,7 +92,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <div className="p-4 border-t border-slate-800 mt-auto flex-shrink-0">
           {sidebarCollapsed ? (
             <div className="flex flex-col items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center text-sm font-semibold shadow-lg">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-cyan-700 flex items-center justify-center text-sm font-semibold shadow-lg">
                 {user?.username?.charAt(0).toUpperCase()}
               </div>
               <button
@@ -99,7 +107,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           ) : (
             <>
               <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center text-sm font-semibold flex-shrink-0 shadow-lg">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-cyan-700 flex items-center justify-center text-sm font-semibold flex-shrink-0 shadow-lg">
                   {user?.username?.charAt(0).toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -169,7 +177,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     onClick={() => setMobileMenuOpen(false)}
                     className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${
                       active
-                        ? 'bg-emerald-600 text-white font-medium shadow-lg shadow-emerald-600/30'
+                        ? 'bg-primary-600 text-white font-medium shadow-lg shadow-cyan-600/30'
                         : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                     }`}
                   >
@@ -185,7 +193,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         {/* User info & logout */}
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-slate-800 bg-slate-900">
           <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center text-sm font-semibold flex-shrink-0 shadow-lg">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-cyan-700 flex items-center justify-center text-sm font-semibold flex-shrink-0 shadow-lg">
               {user?.username?.charAt(0).toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">

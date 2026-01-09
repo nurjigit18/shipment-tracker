@@ -1,7 +1,7 @@
 """Database models for the shipment tracking system."""
 
 from .user import User, Role
-from .shipment import Shipment, ShipmentStatusHistory
+from .shipment import Shipment, ShipmentStatusHistory, ShipmentChangeLog
 from .user_log import UserLog
 from .organization import Organization
 from .warehouse import Warehouse, ProductModel, ProductColor, Supplier
@@ -12,6 +12,7 @@ __all__ = [
     "Role",
     "Shipment",
     "ShipmentStatusHistory",
+    "ShipmentChangeLog",
     "UserLog",
     "Organization",
     "Warehouse",

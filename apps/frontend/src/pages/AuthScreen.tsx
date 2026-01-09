@@ -43,7 +43,7 @@ export function AuthScreen() {
           <div>
             <label className="block text-sm mb-1">Логин</label>
             <input
-              className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:ring-2 focus:ring-emerald-400"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:ring-2 focus:ring-cyan-400"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               autoComplete="username"
@@ -55,7 +55,7 @@ export function AuthScreen() {
             <label className="block text-sm mb-1">Пароль</label>
             <input
               type="password"
-              className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:ring-2 focus:ring-emerald-400"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:ring-2 focus:ring-cyan-400"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"
@@ -68,21 +68,21 @@ export function AuthScreen() {
             <label className="inline-flex items-center gap-2 select-none">
               <input
                 type="checkbox"
-                className="accent-emerald-500"
+                className="accent-cyan-500"
                 checked={remember}
                 onChange={(e) => setRemember(e.target.checked)}
                 disabled={loading}
               />
               Запомнить меня
             </label>
-            <a href="#" className="text-emerald-600 hover:underline">
+            <a href="#" className="text-primary-600 hover:underline">
               Забыли пароль?
             </a>
           </div>
 
           <button
             type="submit"
-            className="w-full rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white py-2.5 font-medium shadow disabled:bg-slate-300 disabled:cursor-not-allowed"
+            className="w-full rounded-xl bg-primary-500 hover:bg-primary-600 text-white py-2.5 font-medium shadow disabled:bg-slate-300 disabled:cursor-not-allowed"
             disabled={loading}
           >
             {loading ? 'Вход...' : 'Войти'}
