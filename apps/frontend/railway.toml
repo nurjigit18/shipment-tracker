@@ -6,3 +6,6 @@ startCommand = "npm run preview"
 
 [env]
 NODE_ENV = "production"
+
+[[nixpacks.phases.setup]]
+nixPkgs = ["nodejs_20"]
