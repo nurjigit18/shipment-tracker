@@ -352,7 +352,7 @@ export function ShipmentDetail() {
 
     try {
       const token = localStorage.getItem('auth_token');
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.novaeris.net';
       const response = await fetch(`${API_BASE_URL}/api/shipments/${data.shipment.id}/pdf`, {
         headers: {
           'Authorization': `Bearer ${token}`,
