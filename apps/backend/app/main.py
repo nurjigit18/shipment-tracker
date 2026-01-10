@@ -49,3 +49,10 @@ async def root():
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
+
+
+@app.get("/test/google-sheets")
+async def test_google_sheets():
+    """Test Google Sheets connection"""
+    from app.services.google_sheets_service import sheets_service
+    return sheets_service.test_connection()

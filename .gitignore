@@ -25,3 +25,7 @@ dist-ssr
 .venv
 .claude
 .env
+
+# Google service account credentials
+apps/backend/*.json
+!apps/backend/package*.json
