@@ -24,6 +24,7 @@ class Organization(Base):
     status_history = relationship("ShipmentStatusHistory", back_populates="organization")
     warehouses = relationship("Warehouse", back_populates="organization")
     suppliers = relationship("Supplier", back_populates="organization")
+    fulfillments = relationship("Fulfillment", back_populates="organization")
     product_models = relationship("ProductModel", back_populates="organization")
     product_colors = relationship("ProductColor", back_populates="organization")
 

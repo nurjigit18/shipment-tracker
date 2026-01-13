@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Home, Package, Plus, LogOut, Menu, X, ChevronLeft, ChevronRight, Users } from 'lucide-react';
+import { Home, Package, Plus, LogOut, Menu, X, ChevronLeft, ChevronRight, Users, UserCog } from 'lucide-react';
 import { useState } from 'react';
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -9,12 +9,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  const menuItems = [
+  const baseMenuItems = [
     { path: '/', icon: Home, label: 'Главная' },
     { path: '/shipments', icon: Package, label: 'Мои отправки' },
     { path: '/shipments/new', icon: Plus, label: 'Новая отправка' },
     { path: '/suppliers', icon: Users, label: 'Мои поставщики' },
   ];
+
+  // Add Users menu item only for admin and owner roles
+  const menuItems = user?.role === 'admin' || user?.role === 'owner'
+    ? [...baseMenuItems, { path: '/users', icon: UserCog, label: 'Пользователи' }]
+    : baseMenuItems;
 
   const isActive = (path: string) => {
     if (path === '/') {

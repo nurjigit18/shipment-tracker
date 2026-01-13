@@ -28,6 +28,8 @@ class Shipment(Base):
     supplier = Column(String(200), nullable=False)  # Text field for now
     warehouse = Column(String(200), nullable=False)  # Text field for now
     route_type = Column(String(20), nullable=False)  # DIRECT or VIA_FF
+    shipment_type = Column(String(20), nullable=False, server_default='BAGS')  # BAGS (мешки) or BOXES (коробки)
+    fulfillment = Column(String(200), nullable=True)  # Fulfillment center name (only for VIA_FF routes)
     shipment_date = Column(Date, nullable=True)  # Date when shipment is scheduled/made
     current_status = Column(String(50))  # NULL, SENT_FROM_FACTORY, SHIPPED_FROM_FF, DELIVERED
     bags_data = Column(JSONB, nullable=False)  # Structured bag data

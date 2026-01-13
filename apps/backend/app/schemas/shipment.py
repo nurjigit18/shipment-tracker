@@ -11,6 +11,13 @@ class RouteType(str, Enum):
     VIA_FF = "VIA_FF"
 
 
+class ShipmentType(str, Enum):
+    """Shipment container types"""
+
+    BAGS = "BAGS"  # мешки
+    BOXES = "BOXES"  # коробки
+
+
 class ShipmentStatus(str, Enum):
     """Shipment status stages"""
 
@@ -47,6 +54,8 @@ class ShipmentCreate(BaseModel):
     supplier: str
     warehouse: str
     route_type: RouteType
+    shipment_type: ShipmentType
+    fulfillment: Optional[str] = None  # Required if route_type is VIA_FF
     shipment_date: Optional[date] = None
     bags_data: List[BagInfo]
 
@@ -58,6 +67,8 @@ class ShipmentDetail(BaseModel):
     supplier: str
     warehouse: str
     route_type: str
+    shipment_type: str
+    fulfillment: Optional[str] = None
     shipment_date: Optional[str] = None  # ISO format date string
     current_status: Optional[str] = None
     bags: List[Dict]  # List of bag objects
@@ -105,6 +116,9 @@ class ShipmentListItem(BaseModel):
     id: str
     supplier: str
     warehouse: str
+    route_type: str
+    shipment_type: str
+    fulfillment: Optional[str] = None
     shipment_date: Optional[date] = None
     current_status: Optional[str] = None
     total_bags: int
@@ -121,5 +135,7 @@ class ShipmentUpdate(BaseModel):
     supplier: Optional[str] = None
     warehouse: Optional[str] = None
     route_type: Optional[RouteType] = None
+    shipment_type: Optional[ShipmentType] = None
+    fulfillment: Optional[str] = None
     shipment_date: Optional[date] = None
     bags_data: Optional[List[BagInfo]] = None

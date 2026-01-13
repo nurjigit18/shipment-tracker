@@ -6,6 +6,8 @@ export interface Shipment {
     supplier: string;
     warehouse: string;
     route_type: string;
+    shipment_type: string;
+    fulfillment?: string | null;
     shipment_date?: string | null;
     current_status: string | null;
     bags: Array<{
@@ -33,6 +35,9 @@ export interface ShipmentListItem {
   id: string;
   supplier: string;
   warehouse: string;
+  route_type: string;
+  shipment_type: string;
+  fulfillment?: string | null;
   current_status: string | null;
   total_bags: number;
   total_pieces: number;
@@ -51,6 +56,8 @@ export interface CreateShipmentRequest {
   supplier: string;
   warehouse: string;
   route_type: 'DIRECT' | 'VIA_FF';
+  shipment_type: 'BAGS' | 'BOXES';
+  fulfillment?: string | null;
   shipment_date?: string | null;
   bags_data: Array<{
     bag_id: string;
@@ -66,6 +73,8 @@ export interface UpdateShipmentRequest {
   supplier?: string;
   warehouse?: string;
   route_type?: 'DIRECT' | 'VIA_FF';
+  shipment_type?: 'BAGS' | 'BOXES';
+  fulfillment?: string | null;
   shipment_date?: string | null;
   bags_data?: Array<{
     bag_id: string;

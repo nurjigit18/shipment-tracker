@@ -56,14 +56,15 @@ async def get_current_user(
         )
 
     # Eagerly load role AND organization relationships to avoid lazy loading issues
-    from sqlalchemy.orm import selectinload
+    # Use joinedload to fetch everything in ONE query instead of 3 separate queries
+    from sqlalchemy.orm import joinedload
 
     result = await db.execute(
         select(User)
-        .options(selectinload(User.role), selectinload(User.organization))
+        .options(joinedload(User.role), joinedload(User.organization))
         .where(User.id == user_id)
     )
-    user = result.scalar_one_or_none()
+    user = result.unique().scalar_one_or_none()
 
     if user is None:
         raise HTTPException(

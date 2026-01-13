@@ -161,6 +161,7 @@ export function MyShipments() {
                 className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent appearance-none bg-white"
               >
                 <option value="">Все</option>
+                <option value="новая отправка">Новая</option>
                 <option value="SENT_FROM_FACTORY">У поставщика</option>
                 <option value="SHIPPED_FROM_FF">У FF</option>
                 <option value="DELIVERED">Доставлено</option>
@@ -318,7 +319,9 @@ export function MyShipments() {
                       <StatusBadge status={shipment.current_status} />
                     </div>
                     <div className="flex items-center gap-4 text-xs text-slate-400">
-                      <span>{shipment.total_bags} мешков</span>
+                      <span>
+                        {shipment.total_bags} {shipment.shipment_type === 'BAGS' ? 'мешков' : 'коробок'}
+                      </span>
                       <span>•</span>
                       <span>{shipment.total_pieces} вещей</span>
                       <span>•</span>
@@ -342,6 +345,7 @@ export function MyShipments() {
 
 function StatusBadge({ status }: { status: string | null }) {
   const statusConfig: Record<string, { label: string; color: string }> = {
+    'новая отправка': { label: 'Новая', color: 'slate' },
     SENT_FROM_FACTORY: { label: 'У поставщика', color: 'amber' },
     SHIPPED_FROM_FF: { label: 'У FF', color: 'blue' },
     DELIVERED: { label: 'Доставлено', color: 'emerald' },
@@ -358,6 +362,7 @@ function StatusBadge({ status }: { status: string | null }) {
   }
 
   const colorClasses = {
+    slate: 'bg-slate-100 text-slate-600',
     amber: 'bg-amber-100 text-amber-700',
     blue: 'bg-blue-100 text-blue-700',
     emerald: 'bg-cyan-100 text-cyan-700',

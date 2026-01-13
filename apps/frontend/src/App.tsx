@@ -7,6 +7,7 @@ import { MyShipments } from './pages/MyShipments';
 import { ShipmentDetail } from './pages/ShipmentDetail';
 import { NewShipment } from './pages/NewShipment';
 import { MySuppliers } from './pages/MySuppliers';
+import { Users } from './pages/Users';
 
 export default function App() {
   const { isAuthenticated, loading } = useAuth();
@@ -34,6 +35,7 @@ export default function App() {
         <Route path="/shipments/new" element={<NewShipment />} />
         <Route path="/shipments/:id" element={<ShipmentDetail />} />
         <Route path="/suppliers" element={<MySuppliers />} />
+        <Route path="/users" element={<Users />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>

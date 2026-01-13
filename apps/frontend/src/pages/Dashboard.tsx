@@ -253,6 +253,7 @@ export function Dashboard() {
 
 function StatusBadge({ status }: { status: string | null }) {
   const statusConfig: Record<string, { label: string; colorClass: string }> = {
+    'новая отправка': { label: 'Новая', colorClass: 'bg-slate-100 text-slate-600 border-slate-200' },
     SENT_FROM_FACTORY: { label: 'У поставщика', colorClass: 'bg-amber-100 text-amber-700 border-amber-200' },
     SHIPPED_FROM_FF: { label: 'У FF', colorClass: 'bg-blue-100 text-blue-700 border-blue-200' },
     DELIVERED: { label: 'Доставлено', colorClass: 'bg-cyan-100 text-cyan-700 border-cyan-200' },

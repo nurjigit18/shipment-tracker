@@ -25,6 +25,11 @@ interface Warehouse {
   name: string;
 }
 
+interface Fulfillment {
+  id: number;
+  name: string;
+}
+
 interface ProductOption {
   id: number;
   name: string;
@@ -39,13 +44,17 @@ export function NewShipment() {
   // Form data
   const [supplierId, setSupplierId] = useState<number | null>(null);
   const [warehouseId, setWarehouseId] = useState<number | null>(null);
+  const [warehouseName, setWarehouseName] = useState<string>('');
   const [routeType, setRouteType] = useState<'DIRECT' | 'VIA_FF'>('VIA_FF');
+  const [shipmentType, setShipmentType] = useState<'BAGS' | 'BOXES'>('BAGS');
+  const [fulfillmentId, setFulfillmentId] = useState<number | null>(null);
   const [shipmentDate, setShipmentDate] = useState<string>('');
   const [bags, setBags] = useState<Bag[]>([]);
 
   // Options from API
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [fulfillments, setFulfillments] = useState<Fulfillment[]>([]);
   const [modelOptions, setModelOptions] = useState<ProductOption[]>([]);
   const [colorOptions, setColorOptions] = useState<ProductOption[]>([]);
 
@@ -53,34 +62,66 @@ export function NewShipment() {
   const [expandedBag, setExpandedBag] = useState<string | null>(null);
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
   const [loadingData, setLoadingData] = useState(true);
+  const [showAddWarehouse, setShowAddWarehouse] = useState(false);
+  const [newWarehouseName, setNewWarehouseName] = useState('');
+  const [removeMode, setRemoveMode] = useState(false);
+  const [warehousesToRemove, setWarehousesToRemove] = useState<number[]>([]);
+  const [deletingWarehouses, setDeletingWarehouses] = useState(false);
 
   const sizes = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL', '6XL', '7XL', '8XL'];
   const sizesRow1 = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
   const sizesRow2 = ['3XL', '4XL', '5XL', '6XL', '7XL', '8XL'];
 
-  const steps = [
+  const getSteps = () => [
     { name: 'Основные данные', icon: '📋' },
-    { name: 'Мешки', icon: '📦' },
+    { name: shipmentType === 'BAGS' ? 'Мешки' : 'Коробки', icon: '📦' },
     { name: 'Проверка', icon: '✓' }
   ];
+
+  const steps = getSteps();
 
   // Load data on mount
   useEffect(() => {
     loadInitialData();
   }, []);
 
+  // Load warehouses and fulfillments when supplier changes
+  useEffect(() => {
+    if (supplierId) {
+      loadWarehousesForSupplier();
+
+      if (routeType === 'VIA_FF') {
+        loadFulfillments();
+      }
+    } else {
+      setWarehouses([]);
+      setWarehouseId(null);
+      setWarehouseName('');
+      setFulfillments([]);
+      setFulfillmentId(null);
+    }
+  }, [supplierId]);
+
+  // Load fulfillments when route type changes
+  useEffect(() => {
+    if (routeType === 'VIA_FF' && supplierId) {
+      loadFulfillments();
+    } else {
+      setFulfillments([]);
+      setFulfillmentId(null);
+    }
+  }, [routeType]);
+
   const loadInitialData = async () => {
     setLoadingData(true);
     try {
-      const [suppliersData, warehousesData, modelsData, colorsData] = await Promise.all([
+      const [suppliersData, modelsData, colorsData] = await Promise.all([
         apiClient.get<Supplier[]>('/api/suppliers/my-suppliers'),
-        apiClient.get<Warehouse[]>('/api/warehouses'),
         apiClient.get<ProductOption[]>('/api/products/models'),
         apiClient.get<ProductOption[]>('/api/products/colors'),
       ]);
 
       setSuppliers(suppliersData);
-      setWarehouses(warehousesData);
       setModelOptions(modelsData);
       setColorOptions(colorsData);
     } catch (e: any) {
@@ -90,10 +131,151 @@ export function NewShipment() {
     }
   };
 
+  const loadFulfillments = async () => {
+    if (!supplierId) return;
+
+    try {
+      const supplier = suppliers.find(s => s.id === supplierId);
+      if (!supplier) return;
+
+      const data = await apiClient.get<Fulfillment[]>(`/api/fulfillments/by-supplier/${encodeURIComponent(supplier.name)}`);
+      setFulfillments(data);
+    } catch (e: any) {
+      console.error('Error loading fulfillments:', e);
+      setFulfillments([]);
+    }
+  };
+
+  const loadWarehousesForSupplier = async () => {
+    if (!supplierId) return;
+
+    try {
+      const supplier = suppliers.find(s => s.id === supplierId);
+      if (!supplier) return;
+
+      const data = await apiClient.get<Warehouse[]>(`/api/warehouses/by-supplier/${encodeURIComponent(supplier.name)}`);
+      setWarehouses(data);
+    } catch (e: any) {
+      console.error('Error loading warehouses:', e);
+      setWarehouses([]);
+    }
+  };
+
+  const createOrGetWarehouse = async (warehouseName: string): Promise<void> => {
+    if (!warehouseName.trim() || !supplierId) return;
+
+    // Check if already exists in current list
+    const existing = warehouses.find(w => w.name.toLowerCase() === warehouseName.toLowerCase());
+    if (existing) {
+      setWarehouseId(existing.id);
+      setWarehouseName(existing.name);
+      return;
+    }
+
+    try {
+      const supplier = suppliers.find(s => s.id === supplierId);
+      if (!supplier) return;
+
+      const newWarehouse = await apiClient.post<Warehouse>(
+        `/api/warehouses/create-and-assign?name=${encodeURIComponent(warehouseName)}&supplier_name=${encodeURIComponent(supplier.name)}`,
+        {}
+      );
+      setWarehouses([...warehouses, newWarehouse]);
+      setWarehouseId(newWarehouse.id);
+      setWarehouseName(newWarehouse.name);
+    } catch (e) {
+      console.error('Error creating warehouse:', e);
+    }
+  };
+
+  const handleAddWarehouse = async () => {
+    if (!newWarehouseName.trim() || !supplierId) return;
+
+    try {
+      const supplier = suppliers.find(s => s.id === supplierId);
+      if (!supplier) return;
+
+      const newWarehouse = await apiClient.post<Warehouse>(
+        `/api/warehouses/create-and-assign?name=${encodeURIComponent(newWarehouseName)}&supplier_name=${encodeURIComponent(supplier.name)}`,
+        {}
+      );
+      setWarehouses([...warehouses, newWarehouse]);
+      setWarehouseId(newWarehouse.id);
+      setNewWarehouseName('');
+      setShowAddWarehouse(false);
+    } catch (e) {
+      console.error('Error creating warehouse:', e);
+    }
+  };
+
+  const handleDeleteWarehouse = async (whId: number) => {
+    try {
+      await apiClient.delete(`/api/warehouses/${whId}`);
+      setWarehouses(warehouses.filter(w => w.id !== whId));
+      if (warehouseId === whId) {
+        setWarehouseId(null);
+      }
+    } catch (e) {
+      console.error('Error deleting warehouse:', e);
+    }
+  };
+
+  const toggleWarehouseForRemoval = (whId: number) => {
+    console.log('Toggle warehouse for removal:', whId);
+    if (warehousesToRemove.includes(whId)) {
+      console.log('Removing from selection');
+      setWarehousesToRemove(warehousesToRemove.filter(id => id !== whId));
+    } else {
+      console.log('Adding to selection');
+      setWarehousesToRemove([...warehousesToRemove, whId]);
+    }
+  };
+
+  const handleConfirmRemoveWarehouses = async () => {
+    if (warehousesToRemove.length === 0) {
+      console.log('No warehouses selected for removal');
+      return;
+    }
+
+    console.log('Deleting warehouses:', warehousesToRemove);
+    setDeletingWarehouses(true);
+
+    try {
+      // Delete all selected warehouses
+      const deletePromises = warehousesToRemove.map(whId => {
+        console.log('Deleting warehouse ID:', whId);
+        return apiClient.delete(`/api/warehouses/${whId}`);
+      });
+
+      await Promise.all(deletePromises);
+      console.log('All warehouses deleted successfully');
+
+      // Update state
+      setWarehouses(warehouses.filter(w => !warehousesToRemove.includes(w.id)));
+      if (warehouseId && warehousesToRemove.includes(warehouseId)) {
+        setWarehouseId(null);
+      }
+
+      // Exit remove mode
+      setRemoveMode(false);
+      setWarehousesToRemove([]);
+    } catch (e: any) {
+      console.error('Error deleting warehouses:', e);
+      alert('Ошибка при удалении складов: ' + (e.message || 'Неизвестная ошибка'));
+    } finally {
+      setDeletingWarehouses(false);
+    }
+  };
+
+  const handleCancelRemoveMode = () => {
+    setRemoveMode(false);
+    setWarehousesToRemove([]);
+  };
+
   const addBag = () => {
     const bagNumber = bags.length + 1;
     const newBag: Bag = {
-      bag_id: `BAG-${bagNumber}`,
+      bag_id: `B-${bagNumber}`,
       items: []
     };
     setBags([...bags, newBag]);
@@ -106,7 +288,7 @@ export function NewShipment() {
 
     const bagNumber = bags.length + 1;
     const newBag: Bag = {
-      bag_id: `BAG-${bagNumber}`,
+      bag_id: `B-${bagNumber}`,
       items: bagToDuplicate.items.map(item => ({ ...item, sizes: { ...item.sizes } }))
     };
     setBags([...bags, newBag]);
@@ -114,7 +296,13 @@ export function NewShipment() {
   };
 
   const removeBag = (bagId: string) => {
-    setBags(bags.filter(b => b.bag_id !== bagId));
+    // Remove the bag and renumber all remaining bags
+    const filteredBags = bags.filter(b => b.bag_id !== bagId);
+    const renumberedBags = filteredBags.map((bag, index) => ({
+      ...bag,
+      bag_id: `B-${index + 1}`
+    }));
+    setBags(renumberedBags);
   };
 
   const duplicateItem = (bagId: string, itemIndex: number) => {
@@ -229,7 +417,14 @@ export function NewShipment() {
   };
 
   const canProceed = () => {
-    if (step === 0) return supplierId !== null && warehouseId !== null;
+    if (step === 0) {
+      const basicRequirements = supplierId !== null && warehouseId !== null;
+      // If route is VIA_FF, also require fulfillment
+      if (routeType === 'VIA_FF') {
+        return basicRequirements && fulfillmentId !== null;
+      }
+      return basicRequirements;
+    }
     if (step === 1) return bags.length > 0 && bags.every(bag => bag.items.length > 0 && bag.items.every(item => item.model && item.color && Object.keys(item.sizes).length > 0));
     return true;
   };
@@ -240,9 +435,16 @@ export function NewShipment() {
 
     const supplier = suppliers.find(s => s.id === supplierId);
     const warehouse = warehouses.find(w => w.id === warehouseId);
+    const fulfillment = fulfillmentId ? fulfillments.find(f => f.id === fulfillmentId) : null;
 
     if (!supplier || !warehouse) {
       setError('Поставщик или склад не найден');
+      setLoading(false);
+      return;
+    }
+
+    if (routeType === 'VIA_FF' && !fulfillment) {
+      setError('Выберите фулфилмент');
       setLoading(false);
       return;
     }
@@ -252,6 +454,8 @@ export function NewShipment() {
         supplier: supplier.name,
         warehouse: warehouse.name,
         route_type: routeType,
+        shipment_type: shipmentType,
+        fulfillment: fulfillment?.name || null,
         shipment_date: shipmentDate || null,
         bags_data: bags.map(bag => ({
           bag_id: bag.bag_id,
@@ -309,21 +513,143 @@ export function NewShipment() {
           <label className="block text-sm font-medium text-slate-700 mb-2">
             Склад назначения *
           </label>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {warehouses.map(wh => (
-              <button
-                key={wh.id}
-                onClick={() => setWarehouseId(wh.id)}
-                className={`p-3 rounded-xl border-2 transition-all ${
-                  warehouseId === wh.id
-                    ? 'border-primary-500 bg-cyan-50 text-cyan-700 font-medium'
-                    : 'border-slate-300 hover:border-slate-400 text-slate-700'
-                }`}
-              >
-                {wh.name}
-              </button>
-            ))}
-          </div>
+
+          {!supplierId ? (
+            <p className="text-sm text-slate-500 p-3 border border-slate-200 rounded-xl bg-slate-50">
+              Сначала выберите поставщика, чтобы увидеть доступные склады
+            </p>
+          ) : (
+            <>
+              {/* Action buttons */}
+              {warehouses.length > 0 && !showAddWarehouse && !removeMode && (
+                <div className="flex gap-2 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddWarehouse(true)}
+                    className="px-3 py-2 text-sm border-2 border-dashed border-slate-300 rounded-lg hover:border-primary-400 hover:bg-cyan-50 text-slate-600 hover:text-primary-600 transition-all flex items-center gap-1"
+                  >
+                    <Plus size={16} />
+                    Добавить
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRemoveMode(true)}
+                    className="px-3 py-2 text-sm border-2 border-red-300 rounded-lg hover:border-red-400 hover:bg-red-50 text-red-600 hover:text-red-700 transition-all flex items-center gap-1"
+                  >
+                    <Trash2 size={16} />
+                    Удалить
+                  </button>
+                </div>
+              )}
+
+              {/* Remove mode controls */}
+              {removeMode && (
+                <div className="mb-3 p-3 bg-red-50 border-2 border-red-200 rounded-xl">
+                  <p className="text-sm text-red-700 mb-2 font-medium">
+                    Выберите склады для удаления ({warehousesToRemove.length} выбрано)
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleConfirmRemoveWarehouses}
+                      disabled={warehousesToRemove.length === 0 || deletingWarehouses}
+                      className="px-4 py-2 bg-red-900 text-white font-bold rounded-lg hover:bg-black active:bg-black active:scale-95 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-sm transition-all shadow-lg border-2 border-red-950 flex items-center gap-2"
+                    >
+                      {deletingWarehouses ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Удаление...
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 size={16} />
+                          Удалить выбранные
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancelRemoveMode}
+                      disabled={deletingWarehouses}
+                      className="px-4 py-2 border-2 border-slate-300 rounded-lg hover:bg-slate-50 active:bg-slate-100 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed text-sm transition-all text-slate-700 font-medium"
+                    >
+                      Отмена
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Add warehouse form */}
+              {showAddWarehouse && (
+                <div className="mb-3 flex gap-2">
+                  <input
+                    type="text"
+                    value={newWarehouseName}
+                    onChange={(e) => setNewWarehouseName(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && handleAddWarehouse()}
+                    placeholder="Название склада"
+                    autoFocus
+                    className="flex-1 p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddWarehouse}
+                    className="px-4 py-3 bg-primary-500 text-white rounded-xl hover:bg-primary-600 transition-colors"
+                  >
+                    Сохранить
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAddWarehouse(false);
+                      setNewWarehouseName('');
+                    }}
+                    className="px-4 py-3 border border-slate-300 rounded-xl hover:bg-slate-50 transition-colors"
+                  >
+                    Отмена
+                  </button>
+                </div>
+              )}
+
+              {/* Warehouses grid */}
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {warehouses.map(wh => (
+                  <button
+                    key={wh.id}
+                    type="button"
+                    onClick={() => removeMode ? toggleWarehouseForRemoval(wh.id) : setWarehouseId(wh.id)}
+                    className={`p-3 rounded-xl border-2 transition-all ${
+                      removeMode
+                        ? warehousesToRemove.includes(wh.id)
+                          ? 'border-red-500 bg-red-50 text-red-700 font-medium'
+                          : 'border-slate-300 hover:border-red-300 text-slate-700'
+                        : warehouseId === wh.id
+                          ? 'border-primary-500 bg-cyan-50 text-cyan-700 font-medium'
+                          : 'border-slate-300 hover:border-slate-400 text-slate-700'
+                    }`}
+                  >
+                    {wh.name}
+                  </button>
+                ))}
+
+                {/* Add Warehouse Button - shown when no warehouses */}
+                {warehouses.length === 0 && !showAddWarehouse && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAddWarehouse(true)}
+                    className="p-3 rounded-xl border-2 border-dashed border-slate-300 hover:border-primary-400 hover:bg-cyan-50 text-slate-600 hover:text-primary-600 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Plus size={18} />
+                    Добавить
+                  </button>
+                )}
+              </div>
+
+              {warehouses.length === 0 && !showAddWarehouse && (
+                <p className="text-sm text-amber-600 mt-2">Нет складов для этого поставщика. Нажмите "Добавить", чтобы создать новый.</p>
+              )}
+            </>
+          )}
         </div>
 
         <div>
@@ -358,6 +684,57 @@ export function NewShipment() {
 
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-2">
+            Тип упаковки
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => setShipmentType('BAGS')}
+              className={`p-4 rounded-xl border-2 transition-all ${
+                shipmentType === 'BAGS'
+                  ? 'border-primary-500 bg-cyan-50 text-cyan-700 font-medium'
+                  : 'border-slate-200 hover:border-slate-300 text-slate-700'
+              }`}
+            >
+              <div className="text-sm font-semibold mb-1">Мешки</div>
+              <div className="text-xs opacity-75">Товары в мешках</div>
+            </button>
+            <button
+              onClick={() => setShipmentType('BOXES')}
+              className={`p-4 rounded-xl border-2 transition-all ${
+                shipmentType === 'BOXES'
+                  ? 'border-primary-500 bg-cyan-50 text-cyan-700 font-medium'
+                  : 'border-slate-200 hover:border-slate-300 text-slate-700'
+              }`}
+            >
+              <div className="text-sm font-semibold mb-1">Коробки</div>
+              <div className="text-xs opacity-75">Товары в коробках</div>
+            </button>
+          </div>
+        </div>
+
+        {routeType === 'VIA_FF' && (
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              Выберите фулфилмент *
+            </label>
+            <select
+              value={fulfillmentId || ''}
+              onChange={(e) => setFulfillmentId(Number(e.target.value))}
+              className="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            >
+              <option value="">Выберите фулфилмент</option>
+              {fulfillments.map(fulfillment => (
+                <option key={fulfillment.id} value={fulfillment.id}>{fulfillment.name}</option>
+              ))}
+            </select>
+            {fulfillments.length === 0 && supplierId && (
+              <p className="text-sm text-amber-600 mt-1">Нет доступных фулфилментов для этого поставщика</p>
+            )}
+          </div>
+        )}
+
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-2">
             Дата отправки
           </label>
           <input
@@ -374,13 +751,18 @@ export function NewShipment() {
   );
 
   const renderBagsStep = () => {
+    const containerSingular = shipmentType === 'BAGS' ? 'мешок' : 'коробку';
+    const containerPlural = shipmentType === 'BAGS' ? 'мешков' : 'коробок';
+    const containerNominativePlural = shipmentType === 'BAGS' ? 'Мешки' : 'Коробки';
+    const containerGenitivePlural = shipmentType === 'BAGS' ? 'мешков' : 'коробок';
+
     return (
       <div className="space-y-4">
         <div className="flex justify-between items-center">
-          <h2 className="text-2xl font-bold text-slate-900">Мешки</h2>
+          <h2 className="text-2xl font-bold text-slate-900">{containerNominativePlural}</h2>
           <div className="text-sm text-slate-600">
             <span className="font-semibold">{calculateTotal()}</span> вещей •
-            <span className="font-semibold ml-2">{bags.length}</span> мешков
+            <span className="font-semibold ml-2">{bags.length}</span> {containerGenitivePlural}
           </div>
         </div>
 
@@ -389,7 +771,7 @@ export function NewShipment() {
           onClick={addBag}
           className="w-full p-4 bg-cyan-50 border-2 border-dashed border-primary-300 rounded-xl text-primary-600 hover:bg-cyan-100 hover:border-cyan-400 transition-all flex items-center justify-center gap-2 font-medium"
         >
-          <Plus size={20} /> Добавить мешок
+          <Plus size={20} /> Добавить {containerSingular}
         </button>
 
         {/* Bags List */}
@@ -413,7 +795,7 @@ export function NewShipment() {
                   <button
                     onClick={() => duplicateBag(bag.bag_id)}
                     className="p-2 hover:bg-blue-100 rounded-lg transition-colors"
-                    title="Дублировать мешок"
+                    title={`Дублировать ${containerSingular}`}
                   >
                     <Copy size={16} className="text-blue-600" />
                   </button>
@@ -421,7 +803,7 @@ export function NewShipment() {
                     <button
                       onClick={() => removeBag(bag.bag_id)}
                       className="p-2 hover:bg-red-100 rounded-lg transition-colors"
-                      title="Удалить мешок"
+                      title={`Удалить ${containerSingular}`}
                     >
                       <Trash2 size={16} className="text-red-600" />
                     </button>
@@ -567,7 +949,7 @@ export function NewShipment() {
                     onClick={() => addItemToBag(bag.bag_id)}
                     className="w-full p-3 border-2 border-dashed border-slate-300 rounded-lg text-slate-600 hover:bg-slate-100 hover:border-slate-400 transition-all flex items-center justify-center gap-2 text-sm font-medium"
                   >
-                    <Plus size={16} /> Добавить товар в мешок
+                    <Plus size={16} /> Добавить товар в {containerSingular}
                   </button>
                 </div>
               )}
@@ -578,8 +960,8 @@ export function NewShipment() {
         {bags.length === 0 && (
           <div className="p-12 text-center border-2 border-dashed border-slate-200 rounded-xl">
             <Package className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-slate-900 mb-2">Нет мешков</h3>
-            <p className="text-slate-600 mb-6">Добавьте первый мешок в отправку</p>
+            <h3 className="text-lg font-medium text-slate-900 mb-2">Нет {containerGenitivePlural}</h3>
+            <p className="text-slate-600 mb-6">Добавьте {shipmentType === 'BAGS' ? 'первый мешок' : 'первую коробку'} в отправку</p>
           </div>
         )}
       </div>
@@ -589,6 +971,8 @@ export function NewShipment() {
   const renderReviewStep = () => {
     const supplier = suppliers.find(s => s.id === supplierId);
     const warehouse = warehouses.find(w => w.id === warehouseId);
+    const fulfillment = fulfillmentId ? fulfillments.find(f => f.id === fulfillmentId) : null;
+    const containerPlural = shipmentType === 'BAGS' ? 'Мешков' : 'Коробок';
 
     return (
       <div className="space-y-6">
@@ -615,6 +999,18 @@ export function NewShipment() {
               {routeType === 'VIA_FF' ? 'Через Фулфилмент' : 'Прямая доставка'}
             </span>
           </div>
+          {fulfillment && (
+            <div className="flex justify-between py-2 border-t border-cyan-200">
+              <span className="font-medium text-slate-700">Фулфилмент:</span>
+              <span className="font-semibold text-slate-900">{fulfillment.name}</span>
+            </div>
+          )}
+          <div className="flex justify-between py-2 border-t border-cyan-200">
+            <span className="font-medium text-slate-700">Тип упаковки:</span>
+            <span className="font-semibold text-slate-900">
+              {shipmentType === 'BAGS' ? 'Мешки' : 'Коробки'}
+            </span>
+          </div>
           {shipmentDate && (
             <div className="flex justify-between py-2 border-t border-cyan-200">
               <span className="font-medium text-slate-700">Дата отправки:</span>
@@ -633,7 +1029,7 @@ export function NewShipment() {
           <div className="grid grid-cols-2 gap-6 text-center">
             <div>
               <div className="text-4xl font-bold text-primary-600 mb-1">{bags.length}</div>
-              <div className="text-sm text-slate-600 font-medium">Мешков</div>
+              <div className="text-sm text-slate-600 font-medium">{containerPlural}</div>
             </div>
             <div>
               <div className="text-4xl font-bold text-primary-600 mb-1">{calculateTotal()}</div>
@@ -666,7 +1062,7 @@ export function NewShipment() {
               ))}
 
               <div className="mt-3 pt-3 border-t border-slate-200 text-sm text-slate-600">
-                Всего в мешке: <span className="font-semibold">{calculateBagTotal(bag)}</span> вещей
+                Всего в {shipmentType === 'BAGS' ? 'мешке' : 'коробке'}: <span className="font-semibold">{calculateBagTotal(bag)}</span> вещей
               </div>
             </div>
           ))}

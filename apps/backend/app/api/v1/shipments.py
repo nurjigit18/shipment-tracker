@@ -55,6 +55,7 @@ async def create_shipment(
         db=db,
         shipment_data=shipment,
         organization_id=current_user.organization_id,
+        current_user=current_user,
     )
 
     # Log the shipment creation
@@ -81,6 +82,7 @@ async def list_shipments(
 ):
     """
     List shipments for current user's organization.
+    FF and driver users only see shipments from their assigned suppliers.
 
     Frontend calls: GET /api/shipments?status=...&supplier=...&limit=20&offset=0
 
@@ -93,15 +95,17 @@ async def list_shipments(
         current_user: Authenticated user (contains organization_id)
 
     Returns:
-        List of shipments for user's organization
+        List of shipments for user's organization (filtered by role)
 
     Security:
         - Automatically filtered by user's organization_id
-        - Users can only see shipments from their organization
+        - FF/driver roles only see shipments from their assigned suppliers
+        - Supplier/admin/warehouse roles see all shipments in organization
     """
     shipments = await ShipmentService.list_shipments(
         db=db,
         organization_id=current_user.organization_id,
+        current_user=current_user,
         status=status,
         supplier=supplier,
         limit=limit,
@@ -135,7 +139,7 @@ async def get_shipment(
     """
     # CRITICAL: Pass organization_id to filter shipment by organization
     data = await ShipmentService.get_shipment(
-        db, shipment_id, current_user.organization_id
+        db, shipment_id, current_user.organization_id, current_user
     )
     return data
 
@@ -171,9 +175,9 @@ async def create_shipment_event(
     """
     # Define role permissions for each status
     role_permissions = {
-        "SENT_FROM_FACTORY": ["supplier", "admin"],
-        "SHIPPED_FROM_FF": ["ff", "admin"],
-        "DELIVERED": ["driver", "warehouse", "admin"],
+        "SENT_FROM_FACTORY": ["supplier", "admin", "owner"],
+        "SHIPPED_FROM_FF": ["ff", "admin", "owner"],
+        "DELIVERED": ["driver", "admin", "owner"],
     }
 
     allowed_roles = role_permissions.get(request.action.value, [])
@@ -239,11 +243,11 @@ async def update_shipment(
         HTTPException 403: If user is not a supplier
         HTTPException 404: If shipment not found
     """
-    # Only suppliers can edit shipments
-    if current_user.role.name not in ["supplier", "admin"]:
+    # Only suppliers/owner/admin can edit shipments
+    if current_user.role.name not in ["supplier", "admin", "owner"]:
         raise HTTPException(
             status_code=403,
-            detail="Only suppliers can edit shipments"
+            detail="Only suppliers/owners can edit shipments"
         )
 
     # Convert Pydantic model to dict, excluding None values
@@ -314,7 +318,8 @@ async def download_shipment_pdf(
     shipment_data = await ShipmentService.get_shipment(
         db=db,
         shipment_id=shipment_id,
-        organization_id=current_user.organization_id
+        organization_id=current_user.organization_id,
+        current_user=current_user
     )
 
     # Get base URL from environment or use default

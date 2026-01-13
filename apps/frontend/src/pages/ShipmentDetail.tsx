@@ -15,6 +15,7 @@ import {
   ChevronDown,
   ChevronUp,
   Download,
+  Loader2,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { shipmentService } from '../services/shipments';
@@ -27,6 +28,11 @@ interface Supplier {
 }
 
 interface WarehouseOption {
+  id: number;
+  name: string;
+}
+
+interface FulfillmentOption {
   id: number;
   name: string;
 }
@@ -82,6 +88,7 @@ type Status = typeof STAGES[number]['key'] | null;
 // Порядок статусов для расчёта прогресса
 const ORDER: Record<string, number> = {
   NONE: -1,
+  'новая отправка': -1,
   SENT_FROM_FACTORY: 0,
   SHIPPED_FROM_FF: 1,
   DELIVERED: 2,
@@ -89,9 +96,10 @@ const ORDER: Record<string, number> = {
 
 // Русские подписи для текущего статуса
 const STATUS_RU: Record<string, string> = {
-  SENT_FROM_FACTORY: 'Отправлено от Поставщика',
-  SHIPPED_FROM_FF: 'Отправлено из Фулфилмента',
-  DELIVERED: 'Доставлено',
+  'новая отправка': 'Новая отправка',
+  SENT_FROM_FACTORY: 'отправлено из цеха',
+  SHIPPED_FROM_FF: 'Отправлено от фулфилмента',
+  DELIVERED: 'доставлено',
 };
 
 function classNames(...xs: Array<string | false | null | undefined>) {
@@ -111,17 +119,25 @@ export function ShipmentDetail() {
   const [saving, setSaving] = useState(false);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseOption[]>([]);
+  const [fulfillments, setFulfillments] = useState<FulfillmentOption[]>([]);
   const [modelOptions, setModelOptions] = useState<ProductOption[]>([]);
   const [colorOptions, setColorOptions] = useState<ProductOption[]>([]);
   const [editForm, setEditForm] = useState({
     supplier: '',
     warehouse: '',
     route_type: '',
+    shipment_type: '',
+    fulfillment: '',
     shipment_date: '',
   });
   const [editBags, setEditBags] = useState<Bag[]>([]);
   const [expandedBag, setExpandedBag] = useState<string | null>(null);
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
+  const [showAddWarehouse, setShowAddWarehouse] = useState(false);
+  const [newWarehouseName, setNewWarehouseName] = useState('');
+  const [removeMode, setRemoveMode] = useState(false);
+  const [warehousesToRemove, setWarehousesToRemove] = useState<number[]>([]);
+  const [deletingWarehouses, setDeletingWarehouses] = useState(false);
 
   const sizes = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL', '6XL', '7XL', '8XL'];
   const sizesRow1 = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
@@ -170,28 +186,175 @@ export function ShipmentDetail() {
         supplier: data.shipment.supplier || '',
         warehouse: data.shipment.warehouse || '',
         route_type: data.shipment.route_type || 'VIA_FF',
+        shipment_type: data.shipment.shipment_type || 'BAGS',
+        fulfillment: data.shipment.fulfillment || '',
         shipment_date: data.shipment.shipment_date || '',
       });
       // Deep copy bags data
       setEditBags(JSON.parse(JSON.stringify(data.shipment.bags || [])));
+
+      // Load warehouses and fulfillments for current supplier
+      if (data.shipment.supplier) {
+        loadWarehousesForSupplier(data.shipment.supplier);
+
+        if (data.shipment.route_type === 'VIA_FF') {
+          loadFulfillmentsForSupplier(data.shipment.supplier);
+        }
+      }
     }
   }, [data, isEditMode]);
 
+  // Load warehouses and fulfillments when supplier changes in edit mode
+  useEffect(() => {
+    if (isEditMode && editForm.supplier) {
+      loadWarehousesForSupplier(editForm.supplier);
+
+      if (editForm.route_type === 'VIA_FF') {
+        loadFulfillmentsForSupplier(editForm.supplier);
+      }
+    } else if (isEditMode) {
+      setWarehouses([]);
+      setFulfillments([]);
+    }
+  }, [editForm.supplier, isEditMode]);
+
   const loadEditData = async () => {
     try {
-      const [suppliersData, warehousesData, modelsData, colorsData] = await Promise.all([
+      const [suppliersData, modelsData, colorsData] = await Promise.all([
         apiClient.get<Supplier[]>('/api/suppliers/my-suppliers'),
-        apiClient.get<WarehouseOption[]>('/api/warehouses'),
         apiClient.get<ProductOption[]>('/api/products/models'),
         apiClient.get<ProductOption[]>('/api/products/colors'),
       ]);
       setSuppliers(suppliersData);
-      setWarehouses(warehousesData);
       setModelOptions(modelsData);
       setColorOptions(colorsData);
+
+      // Load warehouses for current supplier if available
+      if (data?.shipment?.supplier) {
+        loadWarehousesForSupplier(data.shipment.supplier);
+      }
     } catch (e: any) {
       console.error('Error loading edit data:', e);
     }
+  };
+
+  const loadFulfillmentsForSupplier = async (supplierName: string) => {
+    try {
+      const data = await apiClient.get<FulfillmentOption[]>(`/api/fulfillments/by-supplier/${encodeURIComponent(supplierName)}`);
+      setFulfillments(data);
+    } catch (e: any) {
+      console.error('Error loading fulfillments:', e);
+      setFulfillments([]);
+    }
+  };
+
+  const loadWarehousesForSupplier = async (supplierName: string) => {
+    try {
+      const data = await apiClient.get<WarehouseOption[]>(`/api/warehouses/by-supplier/${encodeURIComponent(supplierName)}`);
+      setWarehouses(data);
+    } catch (e: any) {
+      console.error('Error loading warehouses:', e);
+      setWarehouses([]);
+    }
+  };
+
+  const createOrGetWarehouse = async (warehouseName: string): Promise<void> => {
+    if (!warehouseName.trim() || !editForm.supplier) return;
+
+    // Check if already exists in current list
+    const existing = warehouses.find(w => w.name.toLowerCase() === warehouseName.toLowerCase());
+    if (existing) {
+      setEditForm({ ...editForm, warehouse: existing.name });
+      return;
+    }
+
+    try {
+      const newWarehouse = await apiClient.post<WarehouseOption>(
+        `/api/warehouses/create-and-assign?name=${encodeURIComponent(warehouseName)}&supplier_name=${encodeURIComponent(editForm.supplier)}`,
+        {}
+      );
+      setWarehouses([...warehouses, newWarehouse]);
+      setEditForm({ ...editForm, warehouse: newWarehouse.name });
+    } catch (e) {
+      console.error('Error creating warehouse:', e);
+    }
+  };
+
+  const handleAddWarehouse = async () => {
+    if (!newWarehouseName.trim() || !editForm.supplier) return;
+
+    try {
+      const newWarehouse = await apiClient.post<WarehouseOption>(
+        `/api/warehouses/create-and-assign?name=${encodeURIComponent(newWarehouseName)}&supplier_name=${encodeURIComponent(editForm.supplier)}`,
+        {}
+      );
+      setWarehouses([...warehouses, newWarehouse]);
+      setEditForm({ ...editForm, warehouse: newWarehouse.name });
+      setNewWarehouseName('');
+      setShowAddWarehouse(false);
+    } catch (e) {
+      console.error('Error creating warehouse:', e);
+    }
+  };
+
+  const handleDeleteWarehouse = async (whId: number, whName: string) => {
+    try {
+      await apiClient.delete(`/api/warehouses/${whId}`);
+      setWarehouses(warehouses.filter(w => w.id !== whId));
+      if (editForm.warehouse === whName) {
+        setEditForm({ ...editForm, warehouse: '' });
+      }
+    } catch (e) {
+      console.error('Error deleting warehouse:', e);
+    }
+  };
+
+  const toggleWarehouseForRemoval = (whId: number) => {
+    if (warehousesToRemove.includes(whId)) {
+      setWarehousesToRemove(warehousesToRemove.filter(id => id !== whId));
+    } else {
+      setWarehousesToRemove([...warehousesToRemove, whId]);
+    }
+  };
+
+  const handleConfirmRemoveWarehouses = async () => {
+    if (warehousesToRemove.length === 0) {
+      console.log('No warehouses selected for removal');
+      return;
+    }
+
+    console.log('Deleting warehouses:', warehousesToRemove);
+    setDeletingWarehouses(true);
+
+    try {
+      const deletePromises = warehousesToRemove.map(whId => {
+        console.log('Deleting warehouse ID:', whId);
+        return apiClient.delete(`/api/warehouses/${whId}`);
+      });
+
+      await Promise.all(deletePromises);
+      console.log('All warehouses deleted successfully');
+
+      const removedNames = warehouses.filter(w => warehousesToRemove.includes(w.id)).map(w => w.name);
+      setWarehouses(warehouses.filter(w => !warehousesToRemove.includes(w.id)));
+
+      if (removedNames.includes(editForm.warehouse)) {
+        setEditForm({ ...editForm, warehouse: '' });
+      }
+
+      setRemoveMode(false);
+      setWarehousesToRemove([]);
+    } catch (e: any) {
+      console.error('Error deleting warehouses:', e);
+      alert('Ошибка при удалении складов: ' + (e.message || 'Неизвестная ошибка'));
+    } finally {
+      setDeletingWarehouses(false);
+    }
+  };
+
+  const handleCancelRemoveMode = () => {
+    setRemoveMode(false);
+    setWarehousesToRemove([]);
   };
 
   const handleEditToggle = () => {
@@ -201,6 +364,8 @@ export function ShipmentDetail() {
         supplier: data.shipment.supplier || '',
         warehouse: data.shipment.warehouse || '',
         route_type: data.shipment.route_type || 'VIA_FF',
+        shipment_type: data.shipment.shipment_type || 'BAGS',
+        fulfillment: data.shipment.fulfillment || '',
         shipment_date: data.shipment.shipment_date || '',
       });
       setEditBags(JSON.parse(JSON.stringify(data.shipment.bags || [])));
@@ -213,7 +378,7 @@ export function ShipmentDetail() {
   const addBag = () => {
     const bagNumber = editBags.length + 1;
     const newBag: Bag = {
-      bag_id: `BAG-${bagNumber}`,
+      bag_id: `B-${bagNumber}`,
       items: [],
     };
     setEditBags([...editBags, newBag]);
@@ -221,7 +386,13 @@ export function ShipmentDetail() {
   };
 
   const removeBag = (bagId: string) => {
-    setEditBags(editBags.filter((b) => b.bag_id !== bagId));
+    // Remove the bag and renumber all remaining bags
+    const filteredBags = editBags.filter((b) => b.bag_id !== bagId);
+    const renumberedBags = filteredBags.map((bag, index) => ({
+      ...bag,
+      bag_id: `B-${index + 1}`
+    }));
+    setEditBags(renumberedBags);
     if (expandedBag === bagId) setExpandedBag(null);
   };
 
@@ -318,6 +489,12 @@ export function ShipmentDetail() {
       if (editForm.route_type !== data.shipment.route_type) {
         updates.route_type = editForm.route_type;
       }
+      if (editForm.shipment_type !== data.shipment.shipment_type) {
+        updates.shipment_type = editForm.shipment_type;
+      }
+      if (editForm.fulfillment !== data.shipment.fulfillment) {
+        updates.fulfillment = editForm.fulfillment || null;
+      }
       if (editForm.shipment_date !== data.shipment.shipment_date) {
         updates.shipment_date = editForm.shipment_date;
       }
@@ -393,11 +570,11 @@ export function ShipmentDetail() {
   const roleAllows = (action: Status) => {
     if (!action || !user) return false;
     if (action === 'SENT_FROM_FACTORY')
-      return user.role === 'supplier' || user.role === 'admin';
+      return user.role === 'supplier' || user.role === 'admin' || user.role === 'owner';
     if (action === 'SHIPPED_FROM_FF')
-      return user.role === 'ff' || user.role === 'admin';
+      return user.role === 'ff' || user.role === 'admin' || user.role === 'owner';
     if (action === 'DELIVERED')
-      return ['driver', 'warehouse', 'admin'].includes(user.role);
+      return ['driver', 'admin', 'owner'].includes(user.role);
     return false;
   };
 
@@ -501,7 +678,7 @@ export function ShipmentDetail() {
             <Download className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">PDF</span>
           </button>
-          {(user?.role === 'supplier' || user?.role === 'admin') && !isEditMode && (
+          {(user?.role === 'supplier' || user?.role === 'admin' || user?.role === 'owner') && !isEditMode && (
             <button
               onClick={handleEditToggle}
               className="flex items-center gap-1.5 text-xs rounded-lg border border-primary-500 text-primary-600 px-2 sm:px-2.5 py-1 hover:bg-primary-50 flex-shrink-0"
@@ -552,6 +729,20 @@ export function ShipmentDetail() {
                     : 'Через ФФ'}
                 </dd>
               </div>
+              <div className="col-span-1">
+                <dt className="text-slate-500">Упаковка:</dt>
+                <dd className="font-medium">
+                  {data.shipment.shipment_type === 'BAGS'
+                    ? 'Мешки'
+                    : 'Коробки'}
+                </dd>
+              </div>
+              {data.shipment.fulfillment && (
+                <div className="col-span-2">
+                  <dt className="text-slate-500">Фулфилмент:</dt>
+                  <dd className="font-medium">{data.shipment.fulfillment}</dd>
+                </div>
+              )}
               {data.shipment.shipment_date && (
                 <div className="col-span-2">
                   <dt className="text-slate-500">Дата отправки:</dt>
@@ -583,19 +774,143 @@ export function ShipmentDetail() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm text-slate-500 mb-1">Склад:</label>
-                <select
-                  value={editForm.warehouse}
-                  onChange={(e) => setEditForm({ ...editForm, warehouse: e.target.value })}
-                  className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
-                >
-                  <option value="">Выберите склад</option>
-                  {warehouses.map((w) => (
-                    <option key={w.id} value={w.name}>
-                      {w.name}
-                    </option>
-                  ))}
-                </select>
+                <label className="block text-sm text-slate-500 mb-2">Склад:</label>
+                {!editForm.supplier ? (
+                  <p className="text-xs text-slate-500 p-2 border border-slate-200 rounded-lg bg-slate-50">
+                    Сначала выберите поставщика
+                  </p>
+                ) : (
+                  <>
+                    {/* Action buttons */}
+                    {warehouses.length > 0 && !showAddWarehouse && !removeMode && (
+                      <div className="flex gap-2 mb-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowAddWarehouse(true)}
+                          className="px-2 py-1 text-xs border-2 border-dashed border-slate-300 rounded hover:border-primary-400 hover:bg-cyan-50 text-slate-600 hover:text-primary-600 transition-all flex items-center gap-1"
+                        >
+                          <Plus size={12} />
+                          Добавить
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setRemoveMode(true)}
+                          className="px-2 py-1 text-xs border-2 border-red-300 rounded hover:border-red-400 hover:bg-red-50 text-red-600 hover:text-red-700 transition-all flex items-center gap-1"
+                        >
+                          <Trash2 size={12} />
+                          Удалить
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Remove mode controls */}
+                    {removeMode && (
+                      <div className="mb-2 p-2 bg-red-50 border-2 border-red-200 rounded-lg">
+                        <p className="text-xs text-red-700 mb-1 font-medium">
+                          Выберите склады ({warehousesToRemove.length})
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={handleConfirmRemoveWarehouses}
+                            disabled={warehousesToRemove.length === 0 || deletingWarehouses}
+                            className="px-3 py-1 bg-red-900 text-white font-bold rounded hover:bg-black active:bg-black active:scale-95 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-xs transition-all shadow-lg border-2 border-red-950 flex items-center gap-1"
+                          >
+                            {deletingWarehouses ? (
+                              <>
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                Удаление...
+                              </>
+                            ) : (
+                              <>
+                                <Trash2 size={12} />
+                                Удалить
+                              </>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleCancelRemoveMode}
+                            disabled={deletingWarehouses}
+                            className="px-3 py-1 border-2 border-slate-300 rounded hover:bg-slate-50 active:bg-slate-100 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed text-xs transition-all text-slate-700 font-medium"
+                          >
+                            Отмена
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Add warehouse form */}
+                    {showAddWarehouse && (
+                      <div className="flex gap-2 mb-2">
+                        <input
+                          type="text"
+                          value={newWarehouseName}
+                          onChange={(e) => setNewWarehouseName(e.target.value)}
+                          onKeyPress={(e) => e.key === 'Enter' && handleAddWarehouse()}
+                          placeholder="Название склада"
+                          autoFocus
+                          className="flex-1 p-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddWarehouse}
+                          className="px-3 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 text-xs transition-colors"
+                        >
+                          Сохранить
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowAddWarehouse(false);
+                            setNewWarehouseName('');
+                          }}
+                          className="px-3 py-2 border border-slate-300 rounded-lg hover:bg-slate-50 text-xs transition-colors"
+                        >
+                          Отмена
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Warehouses grid */}
+                    <div className="grid grid-cols-2 gap-2 mb-2">
+                      {warehouses.map((w) => (
+                        <button
+                          key={w.id}
+                          type="button"
+                          onClick={() => removeMode ? toggleWarehouseForRemoval(w.id) : setEditForm({ ...editForm, warehouse: w.name })}
+                          className={`p-2 rounded-lg border-2 text-xs transition-all ${
+                            removeMode
+                              ? warehousesToRemove.includes(w.id)
+                                ? 'border-red-500 bg-red-50 text-red-700 font-medium'
+                                : 'border-slate-300 hover:border-red-300 text-slate-700'
+                              : editForm.warehouse === w.name
+                                ? 'border-primary-500 bg-cyan-50 text-cyan-700 font-medium'
+                                : 'border-slate-300 hover:border-slate-400 text-slate-700'
+                          }`}
+                        >
+                          {w.name}
+                        </button>
+                      ))}
+
+                      {/* Add Warehouse Button - shown when no warehouses */}
+                      {warehouses.length === 0 && !showAddWarehouse && (
+                        <button
+                          type="button"
+                          onClick={() => setShowAddWarehouse(true)}
+                          className="p-2 rounded-lg border-2 border-dashed border-slate-300 hover:border-primary-400 hover:bg-cyan-50 text-slate-600 hover:text-primary-600 text-xs transition-all flex items-center justify-center gap-1"
+                        >
+                          <Plus size={14} />
+                          Добавить
+                        </button>
+                      )}
+                    </div>
+
+                    {warehouses.length === 0 && !showAddWarehouse && (
+                      <p className="text-xs text-amber-600">Нет складов. Нажмите "Добавить".</p>
+                    )}
+                  </>
+                )}
               </div>
               <div>
                 <label className="block text-sm text-slate-500 mb-1">Маршрут:</label>
@@ -608,6 +923,34 @@ export function ShipmentDetail() {
                   <option value="DIRECT">Прямой</option>
                 </select>
               </div>
+              <div>
+                <label className="block text-sm text-slate-500 mb-1">Упаковка:</label>
+                <select
+                  value={editForm.shipment_type}
+                  onChange={(e) => setEditForm({ ...editForm, shipment_type: e.target.value })}
+                  className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+                >
+                  <option value="BAGS">Мешки</option>
+                  <option value="BOXES">Коробки</option>
+                </select>
+              </div>
+              {editForm.route_type === 'VIA_FF' && (
+                <div>
+                  <label className="block text-sm text-slate-500 mb-1">Фулфилмент:</label>
+                  <select
+                    value={editForm.fulfillment}
+                    onChange={(e) => setEditForm({ ...editForm, fulfillment: e.target.value })}
+                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+                  >
+                    <option value="">Выберите фулфилмент</option>
+                    {fulfillments.map((f) => (
+                      <option key={f.id} value={f.name}>
+                        {f.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="block text-sm text-slate-500 mb-1">Дата отправки:</label>
                 <input
@@ -629,7 +972,9 @@ export function ShipmentDetail() {
           <h2 className="font-medium mb-3">Сводки</h2>
           <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
             <div className="col-span-1">
-              <dt className="text-slate-500">Количество пакетов:</dt>
+              <dt className="text-slate-500">
+                {data.shipment.shipment_type === 'BAGS' ? 'Количество мешков:' : 'Количество коробок:'}
+              </dt>
               <dd className="font-medium">
                 {data.shipment.totals?.bags ?? '—'}
               </dd>
@@ -647,14 +992,16 @@ export function ShipmentDetail() {
       {/* Bags strip */}
       <div className="rounded-2xl bg-white shadow-sm border border-slate-100 p-4 md:p-5 mb-6 overflow-x-auto">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="font-medium">Информация о пакетах</h2>
+          <h2 className="font-medium">
+            {data.shipment.shipment_type === 'BAGS' ? 'Информация о мешках' : 'Информация о коробках'}
+          </h2>
           {isEditMode && (
             <button
               onClick={addBag}
               className="flex items-center gap-1 text-sm text-primary-600 hover:text-primary-700 font-medium"
             >
               <Plus className="w-4 h-4" />
-              Добавить мешок
+              {data.shipment.shipment_type === 'BAGS' ? 'Добавить мешок' : 'Добавить коробку'}
             </button>
           )}
         </div>
@@ -690,7 +1037,9 @@ export function ShipmentDetail() {
           <div className="space-y-4">
             {editBags.length === 0 && (
               <div className="text-center py-8 text-slate-500 text-sm">
-                Нет мешков. Нажмите "Добавить мешок" чтобы начать.
+                {data.shipment.shipment_type === 'BAGS'
+                  ? 'Нет мешков. Нажмите "Добавить мешок" чтобы начать.'
+                  : 'Нет коробок. Нажмите "Добавить коробку" чтобы начать.'}
               </div>
             )}
             {editBags.map((bag, bagIdx) => (

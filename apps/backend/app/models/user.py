@@ -37,12 +37,16 @@ class User(Base):
     password = Column(String)  # Legacy column - not used
     role_id = Column(Integer, ForeignKey("roles.id"), nullable=False)
     organization_id = Column(
-        Integer, ForeignKey("organizations.id"), nullable=False, index=True
-    )
+        Integer, ForeignKey("organizations.id"), nullable=True, index=True
+    )  # Nullable - owner can remove users from organization
+    fulfillment_id = Column(
+        Integer, ForeignKey("fulfillments.id"), nullable=True, index=True
+    )  # For FF role users - links to their fulfillment company
 
     # Relationships
     role = relationship("Role", back_populates="users")
     organization = relationship("Organization", back_populates="users")
+    fulfillment = relationship("Fulfillment", foreign_keys=[fulfillment_id])
     logs = relationship("UserLog", back_populates="user", cascade="all, delete-orphan")
     status_changes = relationship(
         "ShipmentStatusHistory",

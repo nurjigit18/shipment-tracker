@@ -9,6 +9,7 @@ from datetime import datetime
 from ..models.shipment import Shipment, ShipmentStatusHistory
 from ..models.user import User
 from ..schemas.shipment import ShipmentStatus, ShipmentCreate
+from .google_sheets_service import sheets_service
 
 
 class ShipmentService:
@@ -19,6 +20,7 @@ class ShipmentService:
         db: AsyncSession,
         shipment_data: ShipmentCreate,
         organization_id: int,
+        current_user: User = None,
     ) -> dict:
         """
         Create a new shipment with auto-generated ID.
@@ -87,25 +89,29 @@ class ShipmentService:
             supplier=shipment_data.supplier,
             warehouse=shipment_data.warehouse,
             route_type=shipment_data.route_type.value,
+            shipment_type=shipment_data.shipment_type.value,
+            fulfillment=shipment_data.fulfillment,
             shipment_date=shipment_data.shipment_date,
             bags_data=bags_data_dict,
             total_bags=total_bags,
             total_pieces=total_pieces,
             organization_id=organization_id,
-            current_status=None,
+            current_status="новая отправка",
         )
 
         db.add(shipment)
         await db.commit()
         await db.refresh(shipment)
 
-        # Return in the same format as get_shipment
-        return {
+        # Build response data
+        response_data = {
             "shipment": {
                 "id": shipment.id,
                 "supplier": shipment.supplier,
                 "warehouse": shipment.warehouse,
                 "route_type": shipment.route_type,
+                "shipment_type": shipment.shipment_type,
+                "fulfillment": shipment.fulfillment,
                 "shipment_date": shipment.shipment_date.isoformat() if shipment.shipment_date else None,
                 "current_status": shipment.current_status,
                 "bags": shipment.bags_data,
@@ -114,21 +120,38 @@ class ShipmentService:
             "events": [],
         }
 
+        # Sync to Google Sheets (non-blocking, don't fail if it errors)
+        try:
+            username = current_user.username if current_user else "Unknown"
+            sheets_service.sync_shipment_to_sheets(response_data, username)
+        except Exception as e:
+            print(f"⚠️  Failed to sync to Google Sheets: {e}")
+            # Continue anyway - don't fail the shipment creation
+
+        return response_data
+
     @staticmethod
     async def list_shipments(
         db: AsyncSession,
         organization_id: int,
+        current_user: User = None,
         status: Optional[str] = None,
         supplier: Optional[str] = None,
         limit: int = 20,
         offset: int = 0,
     ) -> list[dict]:
         """
-        List shipments for organization with optional filtering and pagination.
+        List shipments with role-based filtering.
+
+        Access Control:
+        - Owner/Admin/Supplier: See all shipments in their organization
+        - FF: See only shipments where fulfillment field matches their company
+        - Driver: Cannot list (returns empty), can only access via direct URL
 
         Args:
             db: Database session
             organization_id: Organization ID for multi-tenant filtering
+            current_user: Current authenticated user
             status: Optional status filter
             supplier: Optional supplier name filter
             limit: Maximum number of results
@@ -140,8 +163,37 @@ class ShipmentService:
         Raises:
             HTTPException: If database error occurs
         """
+        if not current_user:
+            return []
+
+        # Driver role: cannot list shipments, can only access via direct URL
+        if current_user.role.name == 'driver':
+            return []
+
+        # Users without organization cannot see any shipments
+        if organization_id is None:
+            return []
+
         # Build query with organization filter
         query = select(Shipment).where(Shipment.organization_id == organization_id)
+
+        # FF role: filter by fulfillment company
+        if current_user.role.name == 'ff':
+            # Get user's fulfillment company
+            user_with_ff = await db.execute(
+                select(User).options(selectinload(User.fulfillment))
+                .where(User.id == current_user.id)
+            )
+            user = user_with_ff.scalar_one_or_none()
+
+            if user and user.fulfillment:
+                # Only show shipments where fulfillment matches their company name
+                query = query.where(Shipment.fulfillment == user.fulfillment.name)
+            else:
+                # FF user has no fulfillment assigned, return empty list
+                return []
+
+        # Owner/Admin/Supplier: see all shipments in organization (no additional filter)
 
         # Apply status filter if provided
         if status:
@@ -167,6 +219,9 @@ class ShipmentService:
                 "id": s.id,
                 "supplier": s.supplier,
                 "warehouse": s.warehouse,
+                "route_type": s.route_type,
+                "shipment_type": s.shipment_type,
+                "fulfillment": s.fulfillment,
                 "current_status": s.current_status,
                 "total_bags": s.total_bags,
                 "total_pieces": s.total_pieces,
@@ -178,15 +233,24 @@ class ShipmentService:
 
     @staticmethod
     async def get_shipment(
-        db: AsyncSession, shipment_id: str, organization_id: int
+        db: AsyncSession,
+        shipment_id: str,
+        organization_id: int,
+        current_user: User = None
     ) -> dict:
         """
-        Get shipment by ID with status history (organization-filtered for security).
+        Get shipment by ID with status history and role-based access control.
+
+        Access Control:
+        - Owner/Admin/Supplier: Can access all shipments in their organization
+        - FF: Can only access shipments where fulfillment matches their company
+        - Driver: Can access any shipment in their organization (via direct URL)
 
         Args:
             db: Database session
             shipment_id: Shipment ID
             organization_id: Organization ID for multi-tenant filtering
+            current_user: Current authenticated user
 
         Returns:
             Dictionary with shipment and events matching frontend expectations
@@ -208,6 +272,26 @@ class ShipmentService:
                 status_code=404, detail="Shipment not found or access denied"
             )
 
+        # Additional check for FF role: must match fulfillment company
+        if current_user and current_user.role.name == 'ff':
+            user_with_ff = await db.execute(
+                select(User).options(selectinload(User.fulfillment))
+                .where(User.id == current_user.id)
+            )
+            user = user_with_ff.scalar_one_or_none()
+
+            if user and user.fulfillment:
+                # Check if shipment's fulfillment matches user's company
+                if shipment.fulfillment != user.fulfillment.name:
+                    raise HTTPException(
+                        status_code=404, detail="Shipment not found or access denied"
+                    )
+            else:
+                # FF user has no fulfillment assigned
+                raise HTTPException(
+                    status_code=404, detail="Shipment not found or access denied"
+                )
+
         # Get status history with user info
         history_result = await db.execute(
             select(ShipmentStatusHistory)
@@ -224,6 +308,8 @@ class ShipmentService:
                 "supplier": shipment.supplier,
                 "warehouse": shipment.warehouse,
                 "route_type": shipment.route_type,
+                "shipment_type": shipment.shipment_type,
+                "fulfillment": shipment.fulfillment,
                 "shipment_date": shipment.shipment_date.isoformat() if shipment.shipment_date else None,
                 "current_status": shipment.current_status,
                 "bags": shipment.bags_data,
@@ -302,7 +388,7 @@ class ShipmentService:
         if existing.scalar_one_or_none():
             # Already processed, return current state
             return await ShipmentService.get_shipment(
-                db, shipment_id, user.organization_id
+                db, shipment_id, user.organization_id, user
             )
 
         # Update shipment status
@@ -321,7 +407,18 @@ class ShipmentService:
         await db.commit()
         await db.refresh(shipment)
 
-        return await ShipmentService.get_shipment(db, shipment_id, user.organization_id)
+        # Sync status update to Google Sheets (non-blocking)
+        try:
+            sheets_service.update_shipment_status_in_sheets(
+                shipment_id=shipment_id,
+                new_status=new_status.value,
+                supplier_name=shipment.supplier
+            )
+        except Exception as e:
+            print(f"⚠️  Failed to update status in Google Sheets: {e}")
+            # Continue anyway - don't fail the status update
+
+        return await ShipmentService.get_shipment(db, shipment_id, user.organization_id, user)
 
     @staticmethod
     def _validate_status_transition(current: Optional[str], new: str):
@@ -329,7 +426,7 @@ class ShipmentService:
         Validate status can transition from current to new.
 
         Args:
-            current: Current status (can be None)
+            current: Current status (can be None or "новая отправка")
             new: New status to transition to
 
         Raises:
@@ -337,6 +434,7 @@ class ShipmentService:
         """
         valid_transitions = {
             None: ["SENT_FROM_FACTORY"],
+            "новая отправка": ["SENT_FROM_FACTORY"],
             "SENT_FROM_FACTORY": ["SHIPPED_FROM_FF"],
             "SHIPPED_FROM_FF": ["DELIVERED"],
             "DELIVERED": [],  # Terminal state
@@ -421,6 +519,22 @@ class ShipmentService:
             )
             changes_made = True
 
+        if "shipment_type" in update_data and update_data["shipment_type"] != shipment.shipment_type:
+            old_value = shipment.shipment_type
+            shipment.shipment_type = update_data["shipment_type"]
+            await ShipmentChangeLogService.log_change(
+                db, shipment_id, user.id, "shipment_type", old_value, update_data["shipment_type"], user.organization_id
+            )
+            changes_made = True
+
+        if "fulfillment" in update_data and update_data["fulfillment"] != shipment.fulfillment:
+            old_value = shipment.fulfillment
+            shipment.fulfillment = update_data["fulfillment"]
+            await ShipmentChangeLogService.log_change(
+                db, shipment_id, user.id, "fulfillment", old_value, update_data["fulfillment"], user.organization_id
+            )
+            changes_made = True
+
         if "shipment_date" in update_data and update_data["shipment_date"] != shipment.shipment_date:
             old_value = shipment.shipment_date.isoformat() if shipment.shipment_date else None
             shipment.shipment_date = update_data["shipment_date"]
@@ -455,4 +569,4 @@ class ShipmentService:
             await db.commit()
             await db.refresh(shipment)
 
-        return await ShipmentService.get_shipment(db, shipment_id, user.organization_id)
+        return await ShipmentService.get_shipment(db, shipment_id, user.organization_id, user)

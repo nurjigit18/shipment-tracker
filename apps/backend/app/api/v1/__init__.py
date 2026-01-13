@@ -6,7 +6,9 @@ from .shipments import router as shipments_router
 from .organizations import router as organizations_router
 from .warehouses import router as warehouses_router
 from .suppliers import router as suppliers_router
+from .fulfillments import router as fulfillments_router
 from .products import router as products_router
+from .users import router as users_router
 
 api_router = APIRouter()
 
@@ -16,4 +18,6 @@ api_router.include_router(shipments_router, prefix="/shipments", tags=["shipment
 api_router.include_router(organizations_router, tags=["organizations"])
 api_router.include_router(warehouses_router, prefix="/warehouses", tags=["warehouses"])
 api_router.include_router(suppliers_router, prefix="/suppliers", tags=["suppliers"])
+api_router.include_router(fulfillments_router, prefix="/fulfillments", tags=["fulfillments"])
 api_router.include_router(products_router, prefix="/products", tags=["products"])
+api_router.include_router(users_router, prefix="/users", tags=["users"])
