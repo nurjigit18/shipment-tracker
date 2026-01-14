@@ -18,16 +18,35 @@ async def get_my_suppliers(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get suppliers assigned to the current user."""
-    result = await db.execute(
-        select(Supplier)
-        .join(UserSupplier)
-        .where(
-            UserSupplier.user_id == current_user.id,
-            Supplier.is_active == True
+    """
+    Get suppliers for the current user.
+
+    - Owner/Admin: Returns all suppliers in their organization
+    - Other users: Returns only suppliers assigned to them via UserSupplier
+    """
+    # Owner and Admin see all suppliers in their organization
+    if current_user.role.name in ["owner", "admin"]:
+        result = await db.execute(
+            select(Supplier)
+            .where(
+                Supplier.organization_id == current_user.organization_id,
+                Supplier.is_active == True
+            )
+            .order_by(Supplier.name)
         )
-        .order_by(Supplier.name)
-    )
+    else:
+        # Other users see only their assigned suppliers (within their organization)
+        result = await db.execute(
+            select(Supplier)
+            .join(UserSupplier)
+            .where(
+                UserSupplier.user_id == current_user.id,
+                Supplier.organization_id == current_user.organization_id,
+                Supplier.is_active == True
+            )
+            .order_by(Supplier.name)
+        )
+
     suppliers = result.scalars().all()
 
     return [

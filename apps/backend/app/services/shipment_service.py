@@ -34,14 +34,14 @@ class ShipmentService:
             Created shipment data
         """
         # Auto-generate shipment ID with format: SHIP-YYYYMMDD-XXX
-        date_str = datetime.now().strftime("%Y%m%d")
+        # date_str = datetime.now().strftime("%Y%m%d")
 
         # Find the last shipment created today
         result = await db.execute(
             select(Shipment)
             .where(
                 Shipment.organization_id == organization_id,
-                Shipment.id.like(f"SHIP-{date_str}-%")
+                Shipment.id.like(f"SHIP-{organization_id}-%")
             )
             .order_by(Shipment.id.desc())
             .limit(1)
@@ -56,7 +56,7 @@ class ShipmentService:
         else:
             next_seq = 1
 
-        shipment_id = f"SHIP-{date_str}-{next_seq:03d}"
+        shipment_id = f"SHIP-{organization_id}-{next_seq:04d}"
 
         # Calculate totals from bags_data with items
         total_bags = len(shipment_data.bags_data)

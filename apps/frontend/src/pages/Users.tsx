@@ -248,15 +248,15 @@ export function Users() {
           <p className="text-slate-500">Управление пользователями системы</p>
         </div>
         <div className="flex gap-3">
-          {/* Temporarily always show for debugging */}
-          <button
-            onClick={() => setShowAddExistingForm(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors"
-            title={`Debug: role=${currentUser?.role}, isOwner=${isOwner}`}
-          >
-            <UsersIcon className="w-4 h-4" />
-            Добавить существующего
-          </button>
+          {isOwner && (
+            <button
+              onClick={() => setShowAddExistingForm(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors"
+            >
+              <UsersIcon className="w-4 h-4" />
+              Добавить существующего
+            </button>
+          )}
           <button
             onClick={() => setShowCreateForm(true)}
             className="flex items-center gap-2 px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
